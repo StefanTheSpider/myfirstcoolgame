@@ -24,6 +24,28 @@ function OnlineGame() {
     return stored;
   });
 
+  const handleNameSubmit = () => {
+    const trimmed = nameInput.trim();
+    if (trimmed) {
+      localStorage.setItem("playerName", trimmed);
+      setPlayerName(trimmed);
+    }
+  };
+
+  const handleStartNewGame = async () => {
+    const { data, error } = await supabase
+      .from("games")
+      .insert([{ board: emptyBoard, turn: "X", player_x: playerId, player_x_name: playerName }])
+      .select()
+      .single();
+
+    if (error) {
+      console.error("Neues Spiel Fehler:", error);
+    } else {
+      navigate(`/?gameId=${data.id}`);
+    }
+  };
+
   const handleNameAndStartGame = async () => {
     const trimmed = nameInput.trim();
     if (!trimmed) return;
@@ -115,16 +137,11 @@ function OnlineGame() {
   }, [playerName, game, playerSymbol]);
 
   const handleMove = async (index) => {
-    const { data: freshGame, error: loadError } = await supabase
+    const { data: freshGame } = await supabase
       .from("games")
       .select("*")
       .eq("id", game.id)
       .single();
-
-    if (loadError) {
-      console.error("Ladefehler vor Zug:", loadError);
-      return;
-    }
 
     if (
       freshGame.board[index] ||
@@ -141,7 +158,7 @@ function OnlineGame() {
     const isDraw = !winner && newBoard.every(cell => cell !== null);
     const nextTurn = playerSymbol === "X" ? "O" : "X";
 
-    const { error } = await supabase.from("games")
+    await supabase.from("games")
       .update({
         board: newBoard,
         turn: winner || isDraw ? null : nextTurn,
@@ -149,14 +166,12 @@ function OnlineGame() {
         winningCells: winningCells,
       })
       .eq("id", game.id);
-
-    if (error) console.error("Update-Fehler:", error);
   };
 
   const resetGame = async () => {
     if (!game) return;
 
-    const { error } = await supabase.from("games")
+    await supabase.from("games")
       .update({
         board: emptyBoard,
         turn: "X",
@@ -164,15 +179,12 @@ function OnlineGame() {
         winningCells: [],
       })
       .eq("id", game.id);
-
-    if (error) console.error("Reset-Fehler:", error);
   };
 
   const inviteLink = `${window.location.origin}/?gameId=${game?.id}`;
   const nameX = game?.player_x_name || "Player X";
   const nameO = game?.player_o_name || "Player O";
 
-  // Startseite
   if (!gameIdFromUrl) {
     return (
       <div style={{ textAlign: "center", marginTop: "5rem" }}>
@@ -197,6 +209,29 @@ function OnlineGame() {
   }
 
   if (!game) return <div>Loading...</div>;
+
+  // Name nach Beitritt setzen
+  if (!playerName && playerSymbol !== "Spectator") {
+    return (
+      <div style={{ textAlign: "center", marginTop: "5rem" }}>
+        <h2>Bitte gib deinen Namen ein:</h2>
+        <input
+          type="text"
+          value={nameInput}
+          onChange={(e) => setNameInput(e.target.value)}
+          onKeyDown={(e) => e.key === "Enter" && handleNameSubmit()}
+          style={{ padding: "0.5rem", fontSize: "1rem", width: "250px" }}
+        />
+        <br />
+        <button
+          onClick={handleNameSubmit}
+          style={{ marginTop: "1rem", padding: "0.5rem 1rem" }}
+        >
+          Bestätigen
+        </button>
+      </div>
+    );
+  }
 
   return (
     <div className="game">
@@ -257,9 +292,14 @@ function OnlineGame() {
       </div>
 
       {(game.winner || game.winner === "Draw") && (
-        <button onClick={resetGame} style={{ marginTop: "2rem" }}>
-          Neues Spiel (selbes Game)
-        </button>
+        <div style={{ marginTop: "2rem" }}>
+          <button onClick={resetGame} style={{ marginRight: "1rem" }}>
+            Rematch (gleiches Spiel)
+          </button>
+          <button onClick={handleStartNewGame}>
+            Neues Spiel mit anderem Gegner
+          </button>
+        </div>
       )}
     </div>
   );
