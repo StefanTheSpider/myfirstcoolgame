@@ -293,7 +293,7 @@ function OnlineGame() {
 
       {(game.winner || game.winner === "Draw") && (
         <div style={{ marginTop: "2rem" }}>
-          <button onClick={resetGame} style={{ marginRight: "1rem" }}>
+          <button onClick={resetGame} style={{ margin: "1rem" }}>
             Rematch (gleiches Spiel)
           </button>
           <button onClick={handleStartNewGame}>
