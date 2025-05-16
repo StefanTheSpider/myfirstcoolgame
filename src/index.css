@@ -4,6 +4,13 @@ body {
   text-align: center;
 }
 
+.App {
+  display: flex;
+  flex-direction: column;
+  align-content: center;
+  align-items: center;
+}
+
 .grid-container {
   position: relative;
   display: grid;
@@ -11,7 +18,7 @@ body {
   grid-template-rows: repeat(3, 10rem);
   gap: 5px;
   justify-content: center;
-  margin-top: 8rem;
+  margin-top: 4rem;
 }
 
 .grid-element {
@@ -46,4 +53,17 @@ button {
   padding: 0.5rem 1rem;
   font-size: 1rem;
   cursor: pointer;
+}
+
+@media (max-width: 550px) {
+  .grid-container {
+    grid-template-columns: repeat(3, 5rem);
+  grid-template-rows: repeat(3, 5rem);
+  gap: 2px;
+  }
+
+  .grid-element {
+    width: 5rem;
+  height: 5rem;
+  }
 }

@@ -255,7 +255,7 @@ function OnlineGame() {
           />
           <button
             onClick={() => navigator.clipboard.writeText(inviteLink)}
-            style={{ marginLeft: "0.5rem" }}
+            style={{ marginLeft: "0.5rem", marginTop: "1rem" }}
           >
             Link kopieren
           </button>
