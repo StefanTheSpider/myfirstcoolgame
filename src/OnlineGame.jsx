@@ -12,6 +12,7 @@ function OnlineGame() {
   const [playerSymbol, setPlayerSymbol] = useState(null);
   const [playerName, setPlayerName] = useState(() => localStorage.getItem("playerName") || "");
   const [nameInput, setNameInput] = useState("");
+  const [isEditingName, setIsEditingName] = useState(false);
 
   const [playerId] = useState(() => {
     let stored = localStorage.getItem("playerId");
@@ -71,7 +72,6 @@ function OnlineGame() {
     initGame();
   }, [urlGameId, playerId]);
 
-  // Nachträgliches Speichern des Spielernamens, wenn verfügbar
   useEffect(() => {
     const updateName = async () => {
       if (!game || playerSymbol === "Spectator" || !playerName) return;
@@ -91,7 +91,6 @@ function OnlineGame() {
     updateName();
   }, [playerName, game, playerSymbol]);
 
-  // Realtime-Updates
   useEffect(() => {
     const gameId = urlGameId || game?.id;
     if (!gameId) return;
@@ -171,16 +170,36 @@ function OnlineGame() {
     if (error) console.error("Reset-Fehler:", error);
   };
 
-  // Name-Eingabe UI
-  if (!playerName && playerSymbol !== "Spectator") {
-    const handleNameSubmit = () => {
-      const trimmed = nameInput.trim();
-      if (trimmed) {
-        localStorage.setItem("playerName", trimmed);
-        setPlayerName(trimmed);
-      }
-    };
+  const startNewGame = async () => {
+    const { data, error } = await supabase
+      .from("games")
+      .insert([{ board: emptyBoard, turn: "X", player_x: playerId }])
+      .select()
+      .single();
 
+    if (error) {
+      console.error("Neues Spiel Fehler:", error);
+    } else {
+      if (playerName) {
+        await supabase
+          .from("games")
+          .update({ player_x_name: playerName })
+          .eq("id", data.id);
+      }
+      window.location.href = `/?gameId=${data.id}`;
+    }
+  };
+
+  const handleNameSubmit = () => {
+    const trimmed = nameInput.trim();
+    if (trimmed) {
+      localStorage.setItem("playerName", trimmed);
+      setPlayerName(trimmed);
+      setIsEditingName(false);
+    }
+  };
+
+  if (!playerName && playerSymbol !== "Spectator") {
     return (
       <div className="game">
         <h2>Bitte gib deinen Namen ein:</h2>
@@ -188,16 +207,11 @@ function OnlineGame() {
           type="text"
           value={nameInput}
           onChange={(e) => setNameInput(e.target.value)}
-          onKeyDown={(e) => {
-            if (e.key === "Enter") handleNameSubmit();
-          }}
+          onKeyDown={(e) => e.key === "Enter" && handleNameSubmit()}
           style={{ padding: "0.5rem", fontSize: "1rem" }}
         />
         <br />
-        <button
-          onClick={handleNameSubmit}
-          style={{ marginTop: "1rem" }}
-        >
+        <button onClick={handleNameSubmit} style={{ marginTop: "1rem" }}>
           Bestätigen
         </button>
       </div>
@@ -212,16 +226,14 @@ function OnlineGame() {
 
   return (
     <div className="game">
-      <div
-        style={{
-          display: "flex",
-          justifyContent: "center",
-          alignItems: "center",
-          gap: "1rem",
-          flexWrap: "wrap",
-          marginBottom: "1rem",
-        }}
-      >
+      <div style={{
+        display: "flex",
+        justifyContent: "center",
+        alignItems: "center",
+        gap: "1rem",
+        flexWrap: "wrap",
+        marginBottom: "1rem",
+      }}>
         <h1 style={{ margin: 0 }}>
           {game.winner === "Draw"
             ? "Unentschieden!"
@@ -244,7 +256,30 @@ function OnlineGame() {
           : `${game.turn === "X" ? nameX : nameO} ist dran`}
       </h2>
 
-      {playerSymbol === "X" && (
+      <div style={{ marginBottom: "1rem" }}>
+        <p>Spielername: <strong>{playerName}</strong></p>
+        {!isEditingName ? (
+          <button onClick={() => {
+            setIsEditingName(true);
+            setNameInput(playerName);
+          }}>
+            Namen ändern
+          </button>
+        ) : (
+          <>
+            <input
+              type="text"
+              value={nameInput}
+              onChange={(e) => setNameInput(e.target.value)}
+              onKeyDown={(e) => e.key === "Enter" && handleNameSubmit()}
+              style={{ padding: "0.5rem", fontSize: "1rem", marginRight: "0.5rem" }}
+            />
+            <button onClick={handleNameSubmit}>Speichern</button>
+          </>
+        )}
+      </div>
+
+      {playerSymbol === "X" && !game.player_o && (
         <div style={{ marginBottom: "1rem" }}>
           <p>👉 Lade einen Freund ein:</p>
           <input
@@ -278,6 +313,10 @@ function OnlineGame() {
             {cell}
           </div>
         ))}
+      </div>
+
+      <div className="buttons" style={{ marginTop: "2rem" }}>
+        <button onClick={startNewGame}>Neues Spiel mit neuem Gegner starten</button>
       </div>
     </div>
   );
