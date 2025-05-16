@@ -65,22 +65,33 @@ function OnlineGame() {
         } else {
           setPlayerSymbol("Spectator");
         }
-
-        if (playerName) {
-          if (data.player_x === playerId && !data.player_x_name) {
-            await supabase.from("games").update({ player_x_name: playerName }).eq("id", urlGameId);
-          }
-          if (data.player_o === playerId && !data.player_o_name) {
-            await supabase.from("games").update({ player_o_name: playerName }).eq("id", urlGameId);
-          }
-        }
       }
     };
 
     initGame();
-  }, [urlGameId, playerId, playerName]);
+  }, [urlGameId, playerId]);
 
-  // ✅ Realtime-Updates auch bei sofort erstelltem Spiel
+  // Nachträgliches Speichern des Spielernamens, wenn verfügbar
+  useEffect(() => {
+    const updateName = async () => {
+      if (!game || playerSymbol === "Spectator" || !playerName) return;
+
+      const updates = {};
+      if (playerSymbol === "X" && !game.player_x_name) {
+        updates.player_x_name = playerName;
+      } else if (playerSymbol === "O" && !game.player_o_name) {
+        updates.player_o_name = playerName;
+      }
+
+      if (Object.keys(updates).length > 0) {
+        await supabase.from("games").update(updates).eq("id", game.id);
+      }
+    };
+
+    updateName();
+  }, [playerName, game, playerSymbol]);
+
+  // Realtime-Updates
   useEffect(() => {
     const gameId = urlGameId || game?.id;
     if (!gameId) return;
@@ -160,9 +171,16 @@ function OnlineGame() {
     if (error) console.error("Reset-Fehler:", error);
   };
 
-  if (!game) return <div>Loading...</div>;
-
+  // Name-Eingabe UI
   if (!playerName && playerSymbol !== "Spectator") {
+    const handleNameSubmit = () => {
+      const trimmed = nameInput.trim();
+      if (trimmed) {
+        localStorage.setItem("playerName", trimmed);
+        setPlayerName(trimmed);
+      }
+    };
+
     return (
       <div className="game">
         <h2>Bitte gib deinen Namen ein:</h2>
@@ -170,17 +188,14 @@ function OnlineGame() {
           type="text"
           value={nameInput}
           onChange={(e) => setNameInput(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") handleNameSubmit();
+          }}
           style={{ padding: "0.5rem", fontSize: "1rem" }}
         />
         <br />
         <button
-          onClick={() => {
-            const trimmed = nameInput.trim();
-            if (trimmed) {
-              localStorage.setItem("playerName", trimmed);
-              setPlayerName(trimmed);
-            }
-          }}
+          onClick={handleNameSubmit}
           style={{ marginTop: "1rem" }}
         >
           Bestätigen
@@ -188,6 +203,8 @@ function OnlineGame() {
       </div>
     );
   }
+
+  if (!game) return <div>Loading...</div>;
 
   const inviteLink = `${window.location.origin}/?gameId=${game.id}`;
   const nameX = game.player_x_name || "Player X";
@@ -207,13 +224,13 @@ function OnlineGame() {
       >
         <h1 style={{ margin: 0 }}>
           {game.winner === "Draw"
-            ? "It's a draw!"
+            ? "Unentschieden!"
             : game.winner
-            ? `${game.winner} wins!`
+            ? `${game.winner === "X" ? nameX : nameO} gewinnt!`
             : "Online Tic Tac Toe"}
         </h1>
         {(game.winner === "Draw" || game.winner) && (
-          <button onClick={resetGame}>Reset Game</button>
+          <button onClick={resetGame}>Neues Spiel</button>
         )}
       </div>
 
@@ -236,6 +253,12 @@ function OnlineGame() {
             style={{ width: "80%", maxWidth: "400px", padding: "0.5rem" }}
             onClick={(e) => e.target.select()}
           />
+          <button
+            onClick={() => navigator.clipboard.writeText(inviteLink)}
+            style={{ marginLeft: "0.5rem" }}
+          >
+            Link kopieren
+          </button>
         </div>
       )}
 
