@@ -256,17 +256,6 @@ function OnlineGame() {
           </div>
         ))}
       </div>
-
-      <div style={{ marginTop: "2rem" }}>
-        <h3>Powered by</h3>
-        <a href="https://coding-kitchen.com/" target="_blank" rel="noreferrer">
-          <img
-            src="/coding-kitchen_logo.png"
-            alt="coding kitchen logo"
-            style={{ maxWidth: "200px", marginTop: "0.5rem" }}
-          />
-        </a>
-      </div>
     </div>
   );
 }
