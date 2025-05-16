@@ -8,7 +8,6 @@ const emptyBoard = Array(9).fill(null);
 function OnlineGame() {
   const [params] = useSearchParams();
   const urlGameId = params.get("gameId");
-  console.log(urlGameId)
   const [game, setGame] = useState(null);
   const [playerSymbol, setPlayerSymbol] = useState(null);
   const [playerName, setPlayerName] = useState(() => localStorage.getItem("playerName") || "");
