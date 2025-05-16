@@ -5,7 +5,7 @@ import { v4 as uuidv4 } from "uuid";
 
 const emptyBoard = Array(9).fill(null);
 
-function TicTacToeWrapper() {
+function OnlineGame() {
   const [params] = useSearchParams();
   const navigate = useNavigate();
   const gameIdFromUrl = params.get("gameId");
@@ -14,7 +14,6 @@ function TicTacToeWrapper() {
   const [playerSymbol, setPlayerSymbol] = useState(null);
   const [playerName, setPlayerName] = useState(() => localStorage.getItem("playerName") || "");
   const [nameInput, setNameInput] = useState("");
-  const [isEditingName, setIsEditingName] = useState(false);
 
   const [playerId] = useState(() => {
     let stored = localStorage.getItem("playerId");
@@ -45,7 +44,6 @@ function TicTacToeWrapper() {
     }
   };
 
-  // Init Game
   useEffect(() => {
     if (!gameIdFromUrl) return;
 
@@ -80,7 +78,6 @@ function TicTacToeWrapper() {
     initGame();
   }, [gameIdFromUrl, playerId]);
 
-  // Listen for changes
   useEffect(() => {
     if (!gameIdFromUrl) return;
 
@@ -98,7 +95,6 @@ function TicTacToeWrapper() {
     };
   }, [gameIdFromUrl]);
 
-  // Update Name if missing
   useEffect(() => {
     const updateName = async () => {
       if (!game || playerSymbol === "Spectator" || !playerName) return;
@@ -176,9 +172,7 @@ function TicTacToeWrapper() {
   const nameX = game?.player_x_name || "Player X";
   const nameO = game?.player_o_name || "Player O";
 
-  // ========== UI ==========
-
-  // Wenn noch kein Spiel läuft
+  // Startseite
   if (!gameIdFromUrl) {
     return (
       <div style={{ textAlign: "center", marginTop: "5rem" }}>
@@ -202,7 +196,6 @@ function TicTacToeWrapper() {
     );
   }
 
-  // Wenn Spiel geladen wird
   if (!game) return <div>Loading...</div>;
 
   return (
@@ -286,4 +279,4 @@ function checkWinner(board) {
   return null;
 }
 
-export default TicTacToeWrapper;
+export default OnlineGame;
