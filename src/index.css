@@ -1,113 +1,277 @@
+* { box-sizing: border-box; }
+
 body {
-  background-color: lightgray;
+  background-color: #e8e8e8;
   font-family: sans-serif;
   text-align: center;
+  margin: 0;
+  padding: 0;
 }
 
 .App {
   display: flex;
   flex-direction: column;
-  align-content: center;
   align-items: center;
+  min-height: 100vh;
+  padding-bottom: 4rem;
 }
 
-.grid-container {
-  position: relative;
+/* ── Language Toggle ───────────────────────────────────── */
+.lang-toggle {
+  position: fixed;
+  top: 0.75rem;
+  right: 0.75rem;
+  z-index: 1000;
+  padding: 0.3rem 0.7rem;
+  font-size: 0.85rem;
+  background: white;
+  border: 1px solid #ccc;
+  border-radius: 20px;
+  cursor: pointer;
+  box-shadow: 0 2px 6px rgba(0,0,0,0.1);
+}
+
+/* ── Buttons ──────────────────────────────────────────── */
+button {
+  cursor: pointer;
+  font-size: 1rem;
+  border-radius: 8px;
+  border: none;
+  padding: 0.5rem 1rem;
+  transition: opacity 0.15s, transform 0.1s;
+}
+button:active { transform: scale(0.97); }
+button:disabled { opacity: 0.4; cursor: default; }
+
+.primary-btn {
+  background: #2980b9;
+  color: white;
+  padding: 0.6rem 1.4rem;
+  font-size: 1rem;
+}
+.primary-btn:hover:not(:disabled) { background: #1f6699; }
+
+.secondary-btn {
+  background: #ecf0f1;
+  color: #333;
+  border: 1px solid #ccc;
+}
+.secondary-btn:hover { background: #dde; }
+
+/* ── Name Input ───────────────────────────────────────── */
+.name-input {
+  padding: 0.6rem 0.8rem;
+  font-size: 1rem;
+  width: min(280px, 80vw);
+  border: 1px solid #ccc;
+  border-radius: 8px;
+  margin-bottom: 0.5rem;
+}
+
+/* ── Game Selector ────────────────────────────────────── */
+.game-selector-grid {
   display: grid;
-  grid-template-columns: repeat(3, 10rem);
-  grid-template-rows: repeat(3, 10rem);
+  grid-template-columns: repeat(2, 1fr);
+  gap: 1rem;
+  max-width: 540px;
+  width: 100%;
+  margin: 1.5rem auto;
+  padding: 0 1rem;
+}
+
+.game-card {
+  background: white;
+  border-radius: 14px;
+  padding: 1.5rem 1rem;
+  cursor: pointer;
+  box-shadow: 0 2px 10px rgba(0,0,0,0.08);
+  transition: transform 0.15s, box-shadow 0.15s;
+  user-select: none;
+}
+.game-card:hover { transform: translateY(-4px); box-shadow: 0 6px 18px rgba(0,0,0,0.13); }
+.game-card:active { transform: scale(0.97); }
+.game-card h2 { margin: 0.4rem 0 0.2rem; font-size: 1rem; }
+.game-card p { margin: 0; color: #888; font-size: 0.85rem; }
+.game-card-icon { font-size: 2.5rem; }
+
+/* ── Mode Selection Modal ─────────────────────────────── */
+.mode-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0.4);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 500;
+}
+.mode-modal {
+  background: white;
+  border-radius: 16px;
+  padding: 2rem;
+  width: min(340px, 90vw);
+  box-shadow: 0 8px 32px rgba(0,0,0,0.2);
+}
+.mode-modal h2 { margin-top: 0; }
+.mode-buttons { display: flex; flex-direction: column; gap: 0.75rem; margin: 1rem 0; }
+.mode-btn { padding: 0.8rem; font-size: 1rem; border-radius: 10px; border: none; cursor: pointer; font-weight: bold; }
+.online-btn { background: #2980b9; color: white; }
+.online-btn:hover { background: #1f6699; }
+.computer-btn { background: #27ae60; color: white; }
+.computer-btn:hover { background: #1e8449; }
+.mode-cancel { background: none; border: none; color: #888; font-size: 0.9rem; cursor: pointer; }
+
+/* ── Tic Tac Toe Grid ─────────────────────────────────── */
+.grid-container {
+  display: grid;
+  grid-template-columns: repeat(3, min(9rem, 28vw));
+  grid-template-rows: repeat(3, min(9rem, 28vw));
   gap: 5px;
   justify-content: center;
-  margin-top: 4rem;
+  margin-top: 1.5rem;
 }
-
 .grid-element {
-  width: 10rem;
-  height: 10rem;
   background-color: #eee;
-  font-size: 4.8rem;
+  font-size: clamp(2rem, 8vw, 4.5rem);
   display: flex;
   align-items: center;
   justify-content: center;
   cursor: pointer;
   user-select: none;
   border: 1px solid #ccc;
-  transition: background-color 0.3s ease, opacity 0.3s ease;
+  border-radius: 6px;
+  transition: background-color 0.2s, opacity 0.2s;
+}
+.grid-element:hover { background: #e0e0e0; }
+.winner-cell { background-color: #c8facc !important; }
+.faded { opacity: 0.35; pointer-events: none; }
+
+/* ── Connect Four ─────────────────────────────────────── */
+.c4-board-wrapper {
+  display: inline-block;
+  margin-top: 0.5rem;
 }
 
-.winner-cell {
-  background-color: #c8facc;
+.c4-arrows {
+  display: grid;
+  grid-template-columns: repeat(7, var(--c4-cell));
+  gap: var(--c4-gap);
+  margin-bottom: 2px;
 }
 
-.faded {
-  opacity: 0.4;
-  pointer-events: none;
+.c4-board {
+  display: grid;
+  grid-template-columns: repeat(7, var(--c4-cell));
+  grid-template-rows: repeat(6, var(--c4-cell));
+  gap: var(--c4-gap);
+  background: #2471a3;
+  padding: var(--c4-gap);
+  border-radius: 10px;
 }
 
-.buttons {
-  margin-top: 1rem;
+.c4-cell {
+  width: var(--c4-cell);
+  height: var(--c4-cell);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #2471a3;
 }
 
-button {
-  margin: 0 0.5rem;
-  padding: 0.5rem 1rem;
+.c4-disc {
+  width: 90%;
+  height: 90%;
+  border-radius: 50%;
+  transition: background 0.2s;
+}
+.disc-empty { background: #d5e8f3; }
+.disc-x { background: #e74c3c; }
+.disc-o { background: #f39c12; }
+.disc-win { background: #2ecc71 !important; box-shadow: 0 0 8px #2ecc71; }
+
+.c4-arrow-btn {
+  width: var(--c4-cell);
+  height: 2rem;
+  background: #85c1e9;
+  border: none;
+  border-radius: 5px;
   font-size: 1rem;
   cursor: pointer;
+  padding: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
+.c4-arrow-btn:hover:not(:disabled) { background: #5dade2; }
 
-.game-selector-grid {
+/* ── Battleship Grid ──────────────────────────────────── */
+.bs-grid {
   display: grid;
-  grid-template-columns: repeat(2, 1fr);
-  gap: 1.5rem;
-  max-width: 600px;
-  margin: 2rem auto;
-  padding: 0 1rem;
+  grid-template-columns: repeat(10, var(--bs-cell));
+  grid-template-rows: repeat(10, var(--bs-cell));
+  gap: 2px;
+}
+.bs-cell {
+  width: var(--bs-cell);
+  height: var(--bs-cell);
+  border: 1px solid #aaa;
+  border-radius: 2px;
+  transition: background 0.15s;
 }
 
-.game-card {
-  background: white;
-  border-radius: 12px;
-  padding: 1.5rem 1rem;
-  cursor: pointer;
-  box-shadow: 0 2px 8px rgba(0,0,0,0.1);
-  transition: transform 0.15s ease, box-shadow 0.15s ease;
-  user-select: none;
+/* ── Rock Paper Scissors ──────────────────────────────── */
+.rps-choices {
+  display: flex;
+  justify-content: center;
+  gap: 1rem;
+  flex-wrap: wrap;
+  margin-top: 0.5rem;
 }
-
-.game-card:hover {
-  transform: translateY(-4px);
-  box-shadow: 0 6px 16px rgba(0,0,0,0.15);
-}
-
-.game-card h2 {
-  margin: 0.5rem 0 0.25rem;
-  font-size: 1.1rem;
-}
-
-.game-card p {
-  margin: 0;
-  color: #888;
-  font-size: 0.9rem;
-}
-
-.game-card-icon {
+.rps-btn {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 1rem;
   font-size: 2.5rem;
+  background: white;
+  border: 2px solid #ccc;
+  border-radius: 12px;
+  cursor: pointer;
+  width: min(120px, 28vw);
+  transition: transform 0.1s, border-color 0.1s;
+}
+.rps-btn:hover { transform: scale(1.05); border-color: #2980b9; }
+.rps-label { font-size: 0.8rem; color: #555; margin-top: 0.25rem; }
+
+/* ── Powered By ───────────────────────────────────────── */
+.powered-by { margin-top: 3rem; }
+.powered-by img { max-width: 120px; }
+
+/* ── CSS Variables (responsive) ───────────────────────── */
+:root {
+  --c4-cell: 3rem;
+  --c4-gap: 4px;
+  --bs-cell: 2.2rem;
 }
 
-@media (max-width: 550px) {
-  .grid-container {
-    grid-template-columns: repeat(3, 5rem);
-    grid-template-rows: repeat(3, 5rem);
-    gap: 2px;
+@media (max-width: 600px) {
+  :root {
+    --c4-cell: 2.2rem;
+    --c4-gap: 3px;
+    --bs-cell: 1.55rem;
   }
 
-  .grid-element {
-    width: 5rem;
-    height: 5rem;
-  }
+  .c4-arrow-btn { height: 1.6rem; font-size: 0.85rem; }
 
-  .game-selector-grid {
-    grid-template-columns: repeat(2, 1fr);
-    gap: 1rem;
+  .grid-element { font-size: clamp(1.8rem, 9vw, 3rem); }
+
+  .rps-btn { width: min(100px, 26vw); font-size: 2rem; padding: 0.75rem 0.5rem; }
+}
+
+@media (max-width: 400px) {
+  :root {
+    --c4-cell: 1.8rem;
+    --c4-gap: 2px;
+    --bs-cell: 1.2rem;
   }
+  .bs-cell { border-width: 0.5px; }
 }

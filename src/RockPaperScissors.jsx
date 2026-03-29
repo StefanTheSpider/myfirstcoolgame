@@ -3,76 +3,114 @@ import { useSearchParams, useNavigate } from "react-router-dom";
 import { db } from "./firebaseClient";
 import { ref, set, update, get, onValue, push, onDisconnect } from "firebase/database";
 import { v4 as uuidv4 } from "uuid";
+import { useLanguage } from "./LanguageContext";
 
 const CHOICES = ["Stein", "Schere", "Papier"];
 const ICONS = { Stein: "🪨", Schere: "✂️", Papier: "📄" };
+const ICONS_EN = { Stein: "🪨 Rock", Schere: "✂️ Scissors", Papier: "📄 Paper" };
 
-function getResult(choiceX, choiceO) {
-  if (choiceX === choiceO) return "Draw";
-  if (
-    (choiceX === "Stein" && choiceO === "Schere") ||
-    (choiceX === "Schere" && choiceO === "Papier") ||
-    (choiceX === "Papier" && choiceO === "Stein")
-  )
-    return "X";
+function getResult(cx, co) {
+  if (cx === co) return "Draw";
+  if ((cx==="Stein"&&co==="Schere")||(cx==="Schere"&&co==="Papier")||(cx==="Papier"&&co==="Stein")) return "X";
   return "O";
+}
+
+function getAiChoice() {
+  return CHOICES[Math.floor(Math.random() * 3)];
 }
 
 function RockPaperScissors() {
   const [params] = useSearchParams();
   const navigate = useNavigate();
+  const { t, language } = useLanguage();
   const gameIdFromUrl = params.get("gameId");
+  const mode = params.get("mode") || "online";
+  const isComputer = mode === "computer";
 
   const [game, setGame] = useState(null);
   const [playerSymbol, setPlayerSymbol] = useState(null);
   const [playerName] = useState(() => localStorage.getItem("playerName") || "");
 
   const [playerId] = useState(() => {
-    let stored = localStorage.getItem("playerId");
-    if (!stored) {
-      stored = uuidv4();
-      localStorage.setItem("playerId", stored);
-    }
-    return stored;
+    let s = localStorage.getItem("playerId");
+    if (!s) { s = uuidv4(); localStorage.setItem("playerId", s); }
+    return s;
   });
 
-  const createGame = async () => {
-    const gamesRef = ref(db, "rps");
-    const newGameRef = push(gamesRef);
-    await set(newGameRef, {
-      player_x: playerId,
-      player_x_name: playerName,
+  const choiceLabel = (key) => language === "en" ? ICONS_EN[key] : `${ICONS[key]} ${key}`;
+
+  // ── Computer mode ──────────────────────────────────────────────────────
+
+  const initComputerGame = () => ({
+    id: "local",
+    player_x: playerId, player_x_name: playerName,
+    player_x_choice: null,
+    player_o: "computer", player_o_name: t.computer,
+    player_o_choice: null,
+    score_x: 0, score_o: 0,
+    round: 1, result: null,
+  });
+
+  useEffect(() => {
+    if (!isComputer) return;
+    setPlayerSymbol("X");
+    setGame(initComputerGame());
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isComputer]);
+
+  const handleComputerChoice = (choice) => {
+    if (!game || game.result) return;
+    const aiChoice = getAiChoice();
+    const result = getResult(choice, aiChoice);
+    setGame(prev => ({
+      ...prev,
+      player_x_choice: choice,
+      player_o_choice: aiChoice,
+      result,
+      score_x: prev.score_x + (result === "X" ? 1 : 0),
+      score_o: prev.score_o + (result === "O" ? 1 : 0),
+    }));
+  };
+
+  const nextRoundComputer = () => {
+    setGame(prev => ({
+      ...prev,
+      player_x_choice: null, player_o_choice: null, result: null,
+      round: prev.round + 1,
+    }));
+  };
+
+  // ── Online mode ────────────────────────────────────────────────────────
+
+  const createOnlineGame = async () => {
+    const gRef = ref(db, "rps");
+    const newRef = push(gRef);
+    await set(newRef, {
+      player_x: playerId, player_x_name: playerName,
       player_x_choice: null,
-      player_o: null,
-      player_o_name: null,
-      player_o_choice: null,
-      score_x: 0,
-      score_o: 0,
-      round: 1,
-      result: null,
+      player_o: null, player_o_name: null, player_o_choice: null,
+      score_x: 0, score_o: 0, round: 1, result: null,
     });
-    onDisconnect(newGameRef).remove();
-    return newGameRef.key;
+    onDisconnect(newRef).remove();
+    return newRef.key;
   };
 
   const handleStart = async () => {
-    const gameId = await createGame();
-    navigate(`/rps?gameId=${gameId}`);
+    if (isComputer) { setGame(initComputerGame()); return; }
+    const id = await createOnlineGame();
+    navigate(`/rps?gameId=${id}&mode=online`);
   };
 
   useEffect(() => {
-    if (!gameIdFromUrl) return;
+    if (!gameIdFromUrl || isComputer) return;
     const gameRef = ref(db, `rps/${gameIdFromUrl}`);
-
     const init = async () => {
-      const snapshot = await get(gameRef);
-      if (!snapshot.exists()) { navigate("/"); return; }
-      const data = snapshot.val();
+      const snap = await get(gameRef);
+      if (!snap.exists()) { navigate("/"); return; }
+      const data = snap.val();
       setGame({ ...data, id: gameIdFromUrl });
-
       if (data.player_x === playerId) {
-        setPlayerSymbol("X");
-        onDisconnect(gameRef).remove();
+        setPlayerSymbol("X"); onDisconnect(gameRef).remove();
       } else if (!data.player_o) {
         await update(gameRef, { player_o: playerId, player_o_name: playerName });
         setPlayerSymbol("O");
@@ -84,112 +122,112 @@ function RockPaperScissors() {
       }
     };
     init();
-  }, [gameIdFromUrl, playerId, navigate, playerName]);
+  }, [gameIdFromUrl, playerId, navigate, playerName, isComputer]);
 
   useEffect(() => {
-    if (!gameIdFromUrl) return;
+    if (!gameIdFromUrl || isComputer) return;
     const gameRef = ref(db, `rps/${gameIdFromUrl}`);
-    const unsub = onValue(gameRef, (snapshot) => {
-      if (snapshot.exists()) setGame({ ...snapshot.val(), id: gameIdFromUrl });
+    const unsub = onValue(gameRef, (snap) => {
+      if (snap.exists()) setGame({ ...snap.val(), id: gameIdFromUrl });
     });
     return () => unsub();
-  }, [gameIdFromUrl]);
+  }, [gameIdFromUrl, isComputer]);
 
-  // Ergebnis berechnen wenn beide gewählt haben (nur X macht das Update)
+  // Calculate result when both chose (X triggers)
   useEffect(() => {
-    if (!game || !game.player_x_choice || !game.player_o_choice || game.result) return;
+    if (!game || !game.player_x_choice || !game.player_o_choice || game.result || isComputer) return;
     if (playerSymbol !== "X") return;
-
     const result = getResult(game.player_x_choice, game.player_o_choice);
     const gameRef = ref(db, `rps/${game.id}`);
     const updates = { result };
     if (result === "X") updates.score_x = (game.score_x || 0) + 1;
     if (result === "O") updates.score_o = (game.score_o || 0) + 1;
     update(gameRef, updates);
-  }, [game, playerSymbol]);
+  }, [game, playerSymbol, isComputer]);
 
-  const handleChoice = async (choice) => {
+  const handleOnlineChoice = async (choice) => {
     if (!game || game.result || playerSymbol === "Spectator") return;
     const gameRef = ref(db, `rps/${game.id}`);
-    if (playerSymbol === "X" && !game.player_x_choice) {
+    if (playerSymbol === "X" && !game.player_x_choice)
       await update(gameRef, { player_x_choice: choice });
-    } else if (playerSymbol === "O" && !game.player_o_choice) {
+    else if (playerSymbol === "O" && !game.player_o_choice)
       await update(gameRef, { player_o_choice: choice });
-    }
   };
 
-  const nextRound = async () => {
+  const nextRoundOnline = async () => {
     const gameRef = ref(db, `rps/${game.id}`);
     await update(gameRef, {
-      player_x_choice: null,
-      player_o_choice: null,
-      result: null,
-      round: (game.round || 1) + 1,
+      player_x_choice: null, player_o_choice: null,
+      result: null, round: (game.round || 1) + 1,
     });
   };
 
-  const inviteLink = `${window.location.origin}/rps?gameId=${game?.id}`;
-  const myChoice = playerSymbol === "X" ? game?.player_x_choice : game?.player_o_choice;
-  const nameX = game?.player_x_name || "Player X";
-  const nameO = game?.player_o_name || "Player O";
+  // ── Render ─────────────────────────────────────────────────────────────
 
-  if (!gameIdFromUrl) {
+  const nameX = game?.player_x_name || "Player X";
+  const nameO = game?.player_o_name || (isComputer ? t.computer : "Player O");
+  const inviteLink = `${window.location.origin}/rps?gameId=${game?.id}&mode=online`;
+  const effectiveSym = isComputer ? "X" : playerSymbol;
+  const myChoice = effectiveSym === "X" ? game?.player_x_choice : game?.player_o_choice;
+
+  if (!gameIdFromUrl && !isComputer) {
     return (
-      <div style={{ textAlign: "center", marginTop: "5rem" }}>
-        <h1>✌️ Stein Schere Papier</h1>
-        <p>Hallo {playerName}!</p>
-        <button onClick={handleStart} style={{ padding: "0.5rem 1.5rem", fontSize: "1rem" }}>
-          Spiel starten
-        </button>
+      <div style={{ textAlign: "center", marginTop: "4rem", padding: "0 1rem" }}>
+        <h1>✌️ {t.rps}</h1>
+        <p>{playerName}</p>
+        <button className="primary-btn" onClick={handleStart}>{t.startGame}</button>
         <br /><br />
-        <button onClick={() => navigate("/")}>← Zurück</button>
+        <button className="secondary-btn" onClick={() => navigate("/")}>{t.back}</button>
       </div>
     );
   }
 
-  if (!game) return <div>Loading...</div>;
+  if (!game) return <div style={{ textAlign: "center", marginTop: "4rem" }}>{t.loading}</div>;
 
   return (
-    <div style={{ textAlign: "center", marginTop: "3rem" }}>
-      <h1>✌️ Stein Schere Papier</h1>
+    <div style={{ textAlign: "center", padding: "1rem" }}>
+      <h1>✌️ {t.rps}</h1>
 
-      <div style={{ fontSize: "1.2rem", marginBottom: "1rem" }}>
-        Runde {game.round} &nbsp;|&nbsp;
+      <div style={{ fontSize: "1.1rem", marginBottom: "0.5rem" }}>
+        {t.round} {game.round} &nbsp;|&nbsp;
         <strong>{nameX}</strong>: {game.score_x} – <strong>{nameO}</strong>: {game.score_o}
       </div>
 
-      {playerSymbol === "X" && !game.player_o && (
+      {!isComputer && effectiveSym === "X" && !game.player_o && (
         <div style={{ marginBottom: "1rem" }}>
-          <p>👉 Freund einladen:</p>
-          <input
-            readOnly
-            value={inviteLink}
-            style={{ width: "80%", maxWidth: "400px", padding: "0.5rem" }}
-            onClick={(e) => e.target.select()}
-          />
+          <p>{t.inviteFriend}</p>
+          <input readOnly value={inviteLink}
+            style={{ width: "80%", maxWidth: "350px", padding: "0.4rem", fontSize: "0.85rem" }}
+            onClick={(e) => e.target.select()} />
           <button onClick={() => navigator.clipboard.writeText(inviteLink)} style={{ marginLeft: "0.5rem" }}>
-            Kopieren
+            {t.copyLink}
           </button>
-          <p style={{ color: "#888" }}>Warte auf Mitspieler...</p>
+          <p style={{ color: "#888" }}>{t.waitingOpponent}</p>
         </div>
       )}
 
-      {game.player_o && !game.result && (
+      {(isComputer || game.player_o) && !game.result && (
         <div>
           {myChoice ? (
-            <p>Du hast gewählt: {ICONS[myChoice]} — warte auf Gegner...</p>
+            <p>{t.youChose} {ICONS[myChoice]} — {t.waitingChoice}</p>
           ) : (
             <div>
-              <p>Wähle:</p>
-              {CHOICES.map((c) => (
-                <button
-                  key={c}
-                  onClick={() => handleChoice(c)}
-                  style={{ margin: "0.5rem", padding: "1rem 1.5rem", fontSize: "2rem" }}
-                >
-                  {ICONS[c]}
-                </button>
-              ))}
+              <p>{t.choose}</p>
+              <div className="rps-choices">
+                {CHOICES.map((c) => (
+                  <button
+                    key={c}
+                    className="rps-btn"
+                    onClick={() => isComputer ? handleComputerChoice(c) : handleOnlineChoice(c)}
+                  >
+                    {ICONS[c]}
+                    <span className="rps-label">{language === "en"
+                      ? c === "Stein" ? "Rock" : c === "Schere" ? "Scissors" : "Paper"
+                      : c}
+                    </span>
+                  </button>
+                ))}
+              </div>
             </div>
           )}
         </div>
@@ -197,27 +235,27 @@ function RockPaperScissors() {
 
       {game.result && (
         <div>
-          <h2>
-            {nameX}: {ICONS[game.player_x_choice]} &nbsp;vs&nbsp; {nameO}: {ICONS[game.player_o_choice]}
-          </h2>
+          <div style={{ fontSize: "1.2rem", margin: "1rem 0" }}>
+            <span>{nameX}: {choiceLabel(game.player_x_choice)}</span>
+            <span style={{ margin: "0 1rem" }}>vs</span>
+            <span>{nameO}: {choiceLabel(game.player_o_choice)}</span>
+          </div>
           <h2>
             {game.result === "Draw"
-              ? "🤝 Unentschieden!"
-              : `🏆 ${game.result === "X" ? nameX : nameO} gewinnt!`}
+              ? `🤝 ${t.draw}`
+              : `🏆 ${game.result === "X" ? nameX : nameO} ${t.wins}`}
           </h2>
-          {playerSymbol !== "Spectator" && (
-            <button onClick={nextRound} style={{ padding: "0.5rem 1.5rem", marginTop: "1rem" }}>
-              Nächste Runde
-            </button>
-          )}
+          <button className="primary-btn" onClick={isComputer ? nextRoundComputer : nextRoundOnline}>
+            {t.nextRound}
+          </button>
         </div>
       )}
 
-      <p style={{ marginTop: "1rem", color: "#555" }}>
-        Du spielst als: <strong>{playerSymbol}</strong> ({playerName})
+      <p style={{ marginTop: "1rem", fontSize: "0.85rem", color: "#555" }}>
+        {t.playAs}: <strong>{effectiveSym}</strong> ({playerName})
       </p>
-      <button onClick={() => navigate("/")} style={{ marginTop: "1rem" }}>
-        ← Spielauswahl
+      <button className="secondary-btn" onClick={() => navigate("/")} style={{ marginTop: "0.5rem" }}>
+        {t.gameSelection}
       </button>
     </div>
   );
