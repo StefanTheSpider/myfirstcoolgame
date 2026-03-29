@@ -1,9 +1,11 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useCallback, useRef } from "react";
 import { useSearchParams, useNavigate } from "react-router-dom";
 import { db } from "./firebaseClient";
 import { ref, set, update, get, onValue, push, onDisconnect } from "firebase/database";
 import { v4 as uuidv4 } from "uuid";
 import { useLanguage } from "./LanguageContext";
+import RulesModal from "./RulesModal";
+import { GameResultOverlay, TurnBanner } from "./GameOverlay";
 
 const GRID = 10;
 const SHIP_DEFS = (t) => [
@@ -49,57 +51,44 @@ function placeShipsRandomly() {
       for (let i = 0; i < size; i++)
         cells.push(horiz ? row * GRID + col + i : (row + i) * GRID + col);
       if (cells.every(c => !occupied.has(c))) {
-        cells.forEach(c => occupied.add(c));
-        ships.push(cells);
-        placed = true;
+        cells.forEach(c => occupied.add(c)); ships.push(cells); placed = true;
       }
     }
   }
   return ships;
 }
 
-// AI: Hunt/Target strategy
 function getAiShot(shots, enemyShips) {
   const allShipCells = enemyShips.flat();
   const hits = shots.filter(s => allShipCells.includes(s));
   const remaining = Array.from({ length: GRID * GRID }, (_, i) => i).filter(i => !shots.includes(i));
-
-  // Find hits that haven't sunk a ship yet
   const unsunkHits = hits.filter(h => {
     const ship = enemyShips.find(s => s.includes(h));
     return ship && !ship.every(c => shots.includes(c));
   });
-
   if (unsunkHits.length > 0) {
-    // Target mode: try adjacent cells of last hit
     const lastHit = unsunkHits[unsunkHits.length - 1];
     const row = Math.floor(lastHit / GRID), col = lastHit % GRID;
-    // Determine direction if multiple hits
     let candidates = [];
     if (unsunkHits.length > 1) {
       const prev = unsunkHits[unsunkHits.length - 2];
       const dr = Math.floor(lastHit / GRID) - Math.floor(prev / GRID);
       const dc = (lastHit % GRID) - (prev % GRID);
-      // Continue in same direction
       const next = lastHit + dr * GRID + dc;
       const back = unsunkHits[0] - dr * GRID - dc;
       if (next >= 0 && next < GRID * GRID && Math.floor(next / GRID) === row + dr && (next % GRID) === col + dc && !shots.includes(next)) candidates.push(next);
       if (back >= 0 && back < GRID * GRID && !shots.includes(back)) candidates.push(back);
     }
     if (candidates.length === 0) {
-      const adj = [lastHit - 1, lastHit + 1, lastHit - GRID, lastHit + GRID].filter(n =>
-        n >= 0 && n < GRID * GRID &&
-        !shots.includes(n) &&
+      candidates = [lastHit - 1, lastHit + 1, lastHit - GRID, lastHit + GRID].filter(n =>
+        n >= 0 && n < GRID * GRID && !shots.includes(n) &&
         (n === lastHit - 1 ? col > 0 : n === lastHit + 1 ? col < GRID - 1 : true)
       );
-      candidates = adj;
     }
     if (candidates.length > 0) return candidates[Math.floor(Math.random() * candidates.length)];
   }
-
-  // Hunt mode: checkerboard pattern
-  const checkerboard = remaining.filter(i => (Math.floor(i / GRID) + i % GRID) % 2 === 0);
-  const pool = checkerboard.length > 0 ? checkerboard : remaining;
+  const checker = remaining.filter(i => (Math.floor(i / GRID) + i % GRID) % 2 === 0);
+  const pool = checker.length > 0 ? checker : remaining;
   return pool[Math.floor(Math.random() * pool.length)];
 }
 
@@ -108,16 +97,13 @@ function normalizeShots(raw) {
   if (Array.isArray(raw)) return raw;
   return Object.values(raw).map(Number);
 }
-
 function normalizeShips(raw) {
   if (!raw) return [];
   if (Array.isArray(raw)) return raw;
-  return Object.values(raw).map((ship) =>
-    Array.isArray(ship) ? ship : Object.values(ship).map(Number)
-  );
+  return Object.values(raw).map(ship => Array.isArray(ship) ? ship : Object.values(ship).map(Number));
 }
 
-// ── Placement UI ──────────────────────────────────────────────────────────
+// ── Placement Grid ─────────────────────────────────────────────────────────
 
 function PlacementGrid({ placedShips, shipDefs, onPlace, onReset }) {
   const { t } = useLanguage();
@@ -130,12 +116,36 @@ function PlacementGrid({ placedShips, shipDefs, onPlace, onReset }) {
   const done = currentIdx >= shipDefs.length;
   const current = shipDefs[currentIdx];
 
-  const handleMouseEnter = (index) => {
+  // Keyboard rotation
+  useEffect(() => {
+    const handler = (e) => {
+      if (e.key === "r" || e.key === "R") setHorizontal(h => !h);
+    };
+    window.addEventListener("keydown", handler);
+    return () => window.removeEventListener("keydown", handler);
+  }, []);
+
+  const computeHover = useCallback((index, horiz) => {
     if (done) return;
-    const cells = getShipCells(index, current.size, horizontal);
+    const cells = getShipCells(index, current.size, horiz);
     if (!cells) { setHoverCells([]); return; }
     setHoverCells(cells);
     setHoverValid(!hasOverlap(cells, placedShips));
+  }, [done, current, placedShips]);
+
+  const handleMouseEnter = (index) => computeHover(index, horizontal);
+
+  // Touch: tap to place, long-press to rotate
+  const touchTimer = useState(null);
+  const handleTouchStart = (index) => {
+    computeHover(index, horizontal);
+    touchTimer[1](setTimeout(() => {
+      setHorizontal(h => { computeHover(index, !h); return !h; });
+    }, 400));
+  };
+  const handleTouchEnd = (index) => {
+    if (touchTimer[0]) { clearTimeout(touchTimer[0]); touchTimer[1](null); }
+    handleClick(index);
   };
 
   const handleClick = (index) => {
@@ -147,65 +157,72 @@ function PlacementGrid({ placedShips, shipDefs, onPlace, onReset }) {
     setHoverCells([]);
   };
 
-  const handleReset = () => {
-    setCurrentIdx(0);
+  const handleReset = () => { setCurrentIdx(0); setHoverCells([]); onReset(); };
+
+  const toggleHoriz = () => {
+    const next = !horizontal;
+    setHorizontal(next);
     setHoverCells([]);
-    onReset();
   };
 
   return (
-    <div>
-      <div style={{ marginBottom: "0.75rem" }}>
+    <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: "0.75rem" }}>
+      <div style={{ textAlign: "center" }}>
         {!done ? (
           <>
-            <strong>{t.placingShip} {current.name} ({current.size} {t.fields})</strong>
-            <br />
-            <button className="secondary-btn" onClick={() => { setHorizontal(h => !h); setHoverCells([]); }} style={{ marginTop: "0.4rem" }}>
-              {horizontal ? t.horizontal : t.vertical}
+            <p style={{ color: "#a78bfa", fontWeight: 700, marginBottom: "0.4rem" }}>
+              {t.placingShip} <span style={{ color: "white" }}>{current.name}</span> ({current.size} {t.fields})
+            </p>
+            <button className="rotate-btn" onClick={toggleHoriz}>
+              🔄 {horizontal ? t.horizontal : t.vertical} — {t.rotate}
             </button>
           </>
         ) : (
-          <strong style={{ color: "#27ae60" }}>{t.allPlaced}</strong>
+          <p style={{ color: "#34d399", fontWeight: 700, fontSize: "1.1rem" }}>✅ {t.allPlaced}</p>
         )}
       </div>
 
-      <div className="bs-grid" onMouseLeave={() => setHoverCells([])}>
+      <div
+        className="bs-grid"
+        onMouseLeave={() => setHoverCells([])}
+        style={{ touchAction: "none" }}
+      >
         {Array.from({ length: GRID * GRID }, (_, i) => {
           const isPlaced = placedCells.has(i);
           const isHover = hoverCells.includes(i);
-          let bg = "#d6eaf8";
-          if (isPlaced) bg = "#7f8c8d";
-          if (isHover) bg = hoverValid ? "#2ecc71" : "#e74c3c";
+          let extraClass = "bs-cell-empty";
+          if (isPlaced) extraClass = "bs-cell-placed";
+          if (isHover) extraClass = hoverValid ? "bs-cell-hover-valid" : "bs-cell-hover-invalid";
           return (
-            <div key={i} className="bs-cell"
+            <div
+              key={i}
+              className={`bs-cell ${extraClass}`}
               onMouseEnter={() => handleMouseEnter(i)}
               onClick={() => handleClick(i)}
-              style={{ background: bg, cursor: done ? "default" : "pointer" }}
+              onTouchStart={(e) => { e.preventDefault(); handleTouchStart(i); }}
+              onTouchEnd={(e) => { e.preventDefault(); handleTouchEnd(i); }}
+              style={{ cursor: done ? "default" : "pointer" }}
             />
           );
         })}
       </div>
 
-      <div style={{ marginTop: "0.5rem", display: "flex", justifyContent: "center", gap: "0.5rem", flexWrap: "wrap" }}>
+      <div className="ship-list">
         {shipDefs.map((s, idx) => (
-          <span key={idx} style={{
-            fontSize: "0.8rem",
-            textDecoration: idx < currentIdx ? "line-through" : "none",
-            color: idx < currentIdx ? "#27ae60" : idx === currentIdx ? "#2980b9" : "#aaa",
-          }}>
-            {s.name}({s.size})
+          <span key={idx} className={`ship-tag ${idx < currentIdx ? "ship-done" : idx === currentIdx ? "ship-active" : "ship-pending"}`}>
+            {s.name} ({s.size})
           </span>
         ))}
       </div>
 
-      <button className="secondary-btn" onClick={handleReset} style={{ marginTop: "0.5rem" }}>
-        {t.resetPlacement}
+      <button className="btn-secondary" onClick={handleReset} style={{ fontSize: "0.85rem" }}>
+        🔄 {t.resetPlacement}
       </button>
     </div>
   );
 }
 
-// ── Main Component ─────────────────────────────────────────────────────────
+// ── Main ───────────────────────────────────────────────────────────────────
 
 function Battleship() {
   const [params] = useSearchParams();
@@ -219,7 +236,13 @@ function Battleship() {
   const [playerSymbol, setPlayerSymbol] = useState(null);
   const [playerName] = useState(() => localStorage.getItem("playerName") || "");
   const [placedShips, setPlacedShips] = useState([]);
-  const [phase, setPhase] = useState("place"); // place | play
+  const [phase, setPhase] = useState("place");
+  const [showRules, setShowRules] = useState(false);
+  const [copied, setCopied] = useState(false);
+  const [showOverlay, setShowOverlay] = useState(false);
+  const [showTurnBanner, setShowTurnBanner] = useState(false);
+  const prevTurnRef = useRef(null);
+  const turnBannerTextRef = useRef("");
 
   const [playerId] = useState(() => {
     let s = localStorage.getItem("playerId");
@@ -229,34 +252,21 @@ function Battleship() {
 
   const SHIPS = SHIP_DEFS(t);
 
-  // ── Computer mode ──────────────────────────────────────────────────────
+  // ── Computer ───────────────────────────────────────────────────────────
 
-  const initComputerGame = (myShips) => {
-    const aiShips = placeShipsRandomly();
-    return {
-      id: "local",
-      player_x: playerId, player_x_name: playerName,
-      player_x_ships: myShips, player_x_shots: [],
-      player_o: "computer", player_o_name: t.computer,
-      player_o_ships: aiShips, player_o_shots: [],
-      turn: "X", winner: null,
-    };
-  };
+  const initComputerGame = (myShips) => ({
+    id: "local",
+    player_x: playerId, player_x_name: playerName,
+    player_x_ships: myShips, player_x_shots: [],
+    player_o: "computer", player_o_name: t.computer,
+    player_o_ships: placeShipsRandomly(), player_o_shots: [],
+    turn: "X", winner: null,
+  });
 
   useEffect(() => {
     if (!isComputer) return;
-    setPlayerSymbol("X");
-    setPhase("place");
-    setPlacedShips([]);
-    setGame(null);
+    setPlayerSymbol("X"); setPhase("place"); setPlacedShips([]); setGame(null);
   }, [isComputer]);
-
-  const handleConfirmComputerPlacement = () => {
-    if (placedShips.length !== SHIPS.length) return;
-    const g = initComputerGame(placedShips);
-    setGame(g);
-    setPhase("play");
-  };
 
   const doAiShot = (currentGame) => {
     setTimeout(() => {
@@ -266,32 +276,26 @@ function Battleship() {
       const newShots = [...shots, shot];
       const allSunk = myShips.flat().every(c => newShots.includes(c));
       setGame(prev => ({
-        ...prev,
-        player_o_shots: newShots,
+        ...prev, player_o_shots: newShots,
         turn: allSunk ? null : "X",
         winner: allSunk ? "O" : null,
       }));
-    }, 600);
+    }, 700);
   };
 
   const handleComputerShot = (index) => {
     if (!game || game.winner || game.turn !== "X") return;
     const shots = normalizeShots(game.player_x_shots);
     if (shots.includes(index)) return;
-    const opponentShips = normalizeShips(game.player_o_ships);
+    const opShips = normalizeShips(game.player_o_ships);
     const newShots = [...shots, index];
-    const allSunk = opponentShips.flat().every(c => newShots.includes(c));
-    const newGame = {
-      ...game,
-      player_x_shots: newShots,
-      turn: allSunk ? null : "O",
-      winner: allSunk ? "X" : null,
-    };
+    const allSunk = opShips.flat().every(c => newShots.includes(c));
+    const newGame = { ...game, player_x_shots: newShots, turn: allSunk ? null : "O", winner: allSunk ? "X" : null };
     setGame(newGame);
     if (!allSunk) doAiShot(newGame);
   };
 
-  // ── Online mode ────────────────────────────────────────────────────────
+  // ── Online ─────────────────────────────────────────────────────────────
 
   const createOnlineGame = async () => {
     const gRef = ref(db, "battleship");
@@ -345,12 +349,37 @@ function Battleship() {
     return () => unsub();
   }, [gameIdFromUrl, isComputer]);
 
-  const handleConfirmOnlinePlacement = async () => {
+  useEffect(() => {
+    if (!game?.winner) { setShowOverlay(false); return; }
+    const timer = setTimeout(() => setShowOverlay(true), 600);
+    return () => clearTimeout(timer);
+  }, [game?.winner]);
+
+  useEffect(() => {
+    if (!game?.turn || game?.winner) return;
+    if (prevTurnRef.current !== null && prevTurnRef.current !== game.turn) {
+      const name = game.turn === "X" ? (game.player_x_name || "Player X") : (game.player_o_name || "Player O");
+      turnBannerTextRef.current = `${name} ${t.nowShooting}`;
+      setShowTurnBanner(true);
+      const timer = setTimeout(() => setShowTurnBanner(false), 2000);
+      prevTurnRef.current = game.turn;
+      return () => clearTimeout(timer);
+    }
+    prevTurnRef.current = game.turn;
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [game?.turn, game?.winner]);
+
+  const handleConfirmPlacement = async () => {
     if (placedShips.length !== SHIPS.length) return;
-    const gameRef = ref(db, `battleship/${game.id}`);
-    const field = playerSymbol === "X" ? "player_x_ships" : "player_o_ships";
-    await update(gameRef, { [field]: placedShips });
-    setPhase("play");
+    if (isComputer) {
+      setGame(initComputerGame(placedShips));
+      setPhase("play");
+    } else {
+      const gameRef = ref(db, `battleship/${game.id}`);
+      const field = playerSymbol === "X" ? "player_x_ships" : "player_o_ships";
+      await update(gameRef, { [field]: placedShips });
+      setPhase("play");
+    }
   };
 
   const handleOnlineShot = async (index) => {
@@ -361,22 +390,27 @@ function Battleship() {
     if (fd.turn !== playerSymbol || fd.winner) return;
     const myShots = normalizeShots(playerSymbol === "X" ? fd.player_x_shots : fd.player_o_shots);
     if (myShots.includes(index)) return;
-    const opponentShips = normalizeShips(playerSymbol === "X" ? fd.player_o_ships : fd.player_x_ships);
+    const opShips = normalizeShips(playerSymbol === "X" ? fd.player_o_ships : fd.player_x_ships);
     const newShots = [...myShots, index];
-    const allSunk = opponentShips.flat().every(c => newShots.includes(c));
+    const allSunk = opShips.flat().every(c => newShots.includes(c));
     const updates = { turn: playerSymbol === "X" ? "O" : "X" };
-    if (playerSymbol === "X") updates.player_x_shots = newShots;
-    else updates.player_o_shots = newShots;
+    if (playerSymbol === "X") updates.player_x_shots = newShots; else updates.player_o_shots = newShots;
     if (allSunk) { updates.winner = playerSymbol; updates.turn = null; }
     await update(gameRef, updates);
   };
 
-  // ── Render ─────────────────────────────────────────────────────────────
+  const copyLink = (link) => {
+    navigator.clipboard.writeText(link);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  };
 
+  // ── Compute display values ─────────────────────────────────────────────
+
+  const effectiveSym = isComputer ? "X" : playerSymbol;
   const nameX = game?.player_x_name || "Player X";
   const nameO = game?.player_o_name || (isComputer ? t.computer : "Player O");
   const inviteLink = `${window.location.origin}/battleship?gameId=${game?.id}&mode=online`;
-  const effectiveSym = isComputer ? "X" : playerSymbol;
 
   const myShips = normalizeShips(effectiveSym === "X" ? game?.player_x_ships : game?.player_o_ships);
   const opponentShips = normalizeShips(effectiveSym === "X" ? game?.player_o_ships : game?.player_x_ships);
@@ -394,15 +428,21 @@ function Battleship() {
   const opponentHasPlaced = isComputer ? true : opponentShips.length === SHIPS.length;
   const bothPlaced = iHavePlaced && opponentHasPlaced;
 
-  // No game yet
+  const topBar = (
+    <div style={{ display: "flex", justifyContent: "flex-end", width: "100%", maxWidth: "700px", padding: "0.5rem 1rem 0" }}>
+      <button className="btn-icon" onClick={() => setShowRules(true)}>📖 {t.rules}</button>
+    </div>
+  );
+
+  // No game / create
   if (!gameIdFromUrl && !isComputer) {
     return (
-      <div style={{ textAlign: "center", marginTop: "4rem", padding: "0 1rem" }}>
-        <h1>🚢 {t.battleship}</h1>
-        <p>{playerName}</p>
-        <button className="primary-btn" onClick={handleStart}>{t.createGame}</button>
-        <br /><br />
-        <button className="secondary-btn" onClick={() => navigate("/")}>{t.back}</button>
+      <div className="fade-in" style={{ textAlign: "center", padding: "2rem 1rem" }}>
+        {topBar}
+        <h1 className="game-title">🚢 {t.battleship}</h1>
+        <p style={{ color: "rgba(255,255,255,0.5)", marginBottom: "1.5rem" }}>{playerName}</p>
+        <button className="btn-primary" onClick={handleStart}>{t.createGame}</button>
+        {showRules && <RulesModal gameKey="battleship" onClose={() => setShowRules(false)} />}
       </div>
     );
   }
@@ -410,9 +450,10 @@ function Battleship() {
   // Placement phase
   if ((isComputer && phase === "place") || (!isComputer && game && !iHavePlaced && effectiveSym !== "Spectator")) {
     return (
-      <div style={{ textAlign: "center", padding: "1rem" }}>
-        <h1>🚢 {t.battleship}</h1>
-        <h2>{t.placeFleet}</h2>
+      <div className="fade-in" style={{ textAlign: "center", padding: "1rem" }}>
+        {topBar}
+        <h1 className="game-title">🚢 {t.battleship}</h1>
+        <h2 style={{ color: "rgba(255,255,255,0.6)", fontSize: "1.1rem", marginBottom: "1rem" }}>{t.placeFleet}</h2>
         <PlacementGrid
           placedShips={placedShips}
           shipDefs={SHIPS}
@@ -420,36 +461,30 @@ function Battleship() {
           onReset={() => setPlacedShips([])}
         />
         {placedShips.length === SHIPS.length && (
-          <button
-            className="primary-btn"
-            onClick={isComputer ? handleConfirmComputerPlacement : handleConfirmOnlinePlacement}
-            style={{ marginTop: "1rem" }}
-          >
-            {t.confirmFleet}
+          <button className="btn-success" onClick={handleConfirmPlacement} style={{ marginTop: "1rem" }}>
+            ✅ {t.confirmFleet}
           </button>
         )}
-        <br />
-        <button className="secondary-btn" onClick={() => navigate("/")} style={{ marginTop: "0.75rem" }}>
-          {t.gameSelection}
-        </button>
+        {showRules && <RulesModal gameKey="battleship" onClose={() => setShowRules(false)} />}
       </div>
     );
   }
 
-  // Invite / waiting for opponent
+  // Waiting for opponent
   if (!isComputer && effectiveSym === "X" && game && !game.player_o) {
     return (
-      <div style={{ textAlign: "center", marginTop: "3rem", padding: "0 1rem" }}>
-        <h1>🚢 {t.battleship}</h1>
-        <p>{t.inviteFriend}</p>
-        <input readOnly value={inviteLink}
-          style={{ width: "80%", maxWidth: "350px", padding: "0.4rem", fontSize: "0.85rem" }}
-          onClick={(e) => e.target.select()} />
-        <button onClick={() => navigator.clipboard.writeText(inviteLink)} style={{ marginLeft: "0.5rem" }}>
-          {t.copyLink}
-        </button>
-        <p style={{ color: "#888", marginTop: "1rem" }}>{t.waitingOpponent}</p>
-        <button className="secondary-btn" onClick={() => navigate("/")}>{t.gameSelection}</button>
+      <div className="fade-in" style={{ textAlign: "center", padding: "2rem 1rem" }}>
+        {topBar}
+        <h1 className="game-title">🚢 {t.battleship}</h1>
+        <div className="invite-box">
+          <p>{t.inviteFriend}</p>
+          <div className="invite-row">
+            <input readOnly value={inviteLink} className="invite-input" onClick={(e) => e.target.select()} />
+            <button className="btn-primary" onClick={() => copyLink(inviteLink)}>{copied ? "✅" : t.copyLink}</button>
+          </div>
+        </div>
+        <p style={{ color: "rgba(255,255,255,0.4)", marginTop: "1rem" }}>{t.waitingOpponent}</p>
+        {showRules && <RulesModal gameKey="battleship" onClose={() => setShowRules(false)} />}
       </div>
     );
   }
@@ -457,60 +492,68 @@ function Battleship() {
   // Waiting for both to place
   if (!isComputer && !bothPlaced && effectiveSym !== "Spectator") {
     return (
-      <div style={{ textAlign: "center", marginTop: "3rem", padding: "0 1rem" }}>
-        <h1>🚢 {t.battleship}</h1>
-        <h2 style={{ color: "#27ae60" }}>{t.allPlaced}</h2>
-        <p style={{ color: "#888" }}>{t.waitingEnemy}</p>
-        <button className="secondary-btn" onClick={() => navigate("/")}>{t.gameSelection}</button>
+      <div className="fade-in" style={{ textAlign: "center", padding: "2rem 1rem" }}>
+        {topBar}
+        <h1 className="game-title">🚢 {t.battleship}</h1>
+        <div className="status-badge status-wait" style={{ marginTop: "1rem" }}>⏳ {t.waitingEnemy}</div>
+        {showRules && <RulesModal gameKey="battleship" onClose={() => setShowRules(false)} />}
       </div>
     );
   }
 
-  if (!game) return <div style={{ textAlign: "center", marginTop: "4rem" }}>{t.loading}</div>;
+  if (!game) return <div style={{ textAlign: "center", marginTop: "4rem", color: "rgba(255,255,255,0.5)" }}>{t.loading}</div>;
+
+  const overlayResult = !game.winner ? null
+    : game.winner === (isComputer ? "X" : effectiveSym) ? "win" : "loss";
 
   const canShoot = !game.winner && game.turn === (isComputer ? "X" : effectiveSym);
+  const statusClass = game.winner ? "status-win" : canShoot ? "status-turn" : "status-wait";
   const statusText = game.winner
-    ? game.winner === (isComputer ? "X" : effectiveSym) ? `🏆 ${t.youWin}` : `🏆 ${game.winner === "X" ? nameX : nameO} ${t.wins}`
-    : canShoot ? t.fireNow
+    ? (game.winner === (isComputer ? "X" : effectiveSym) ? `🏆 ${t.youWin}` : `🏆 ${game.winner === "X" ? nameX : nameO} ${t.wins}`)
+    : canShoot ? `🎯 ${t.fireNow}`
     : `⏳ ${game.turn === "X" ? nameX : nameO} ${t.enemyShooting}`;
 
   return (
-    <div style={{ textAlign: "center", padding: "1rem" }}>
-      <h1>🚢 {t.battleship}</h1>
-      <h2 style={{ minHeight: "2rem" }}>{statusText}</h2>
+    <div className="fade-in" style={{ textAlign: "center", padding: "0.5rem 0.5rem 1rem" }}>
+      {topBar}
+      <h1 className="game-title">🚢 {t.battleship}</h1>
+      <div className={`status-badge ${statusClass}`}>{statusText}</div>
 
-      <div style={{ display: "flex", justifyContent: "center", gap: "1.5rem", flexWrap: "wrap", marginTop: "0.5rem" }}>
-        {/* My grid */}
+      <div className="player-bar">
+        <span className="player-x">🔵 {nameX}</span>
+        <span>{t.vs}</span>
+        <span className="player-o">🔴 {nameO}</span>
+      </div>
+
+      <div style={{ display: "flex", justifyContent: "center", gap: "1.5rem", flexWrap: "wrap", marginTop: "0.75rem" }}>
         <div>
-          <h3>{t.yourFleet}</h3>
+          <p style={{ fontSize: "0.85rem", color: "rgba(255,255,255,0.45)", marginBottom: "0.3rem" }}>{t.yourFleet}</p>
           <div className="bs-grid">
             {Array.from({ length: GRID * GRID }, (_, i) => {
               const isShip = myShipCells.has(i);
               const isHit = incomingHits.has(i);
               const isMiss = incomingMisses.has(i);
-              let bg = "#d6eaf8";
-              if (isShip) bg = "#7f8c8d";
-              if (isHit) bg = "#e74c3c";
-              if (isMiss) bg = "#85c1e9";
-              return <div key={i} className="bs-cell" style={{ background: bg }} />;
+              let cls = "bs-cell-empty";
+              if (isShip) cls = "bs-cell-ship";
+              if (isHit) cls = "bs-cell-hit";
+              if (isMiss) cls = "bs-cell-miss";
+              return <div key={i} className={`bs-cell ${cls}`} />;
             })}
           </div>
         </div>
-
-        {/* Opponent grid */}
         <div>
-          <h3>{t.enemyField}</h3>
+          <p style={{ fontSize: "0.85rem", color: "rgba(255,255,255,0.45)", marginBottom: "0.3rem" }}>{t.enemyField}</p>
           <div className="bs-grid">
             {Array.from({ length: GRID * GRID }, (_, i) => {
               const isHit = shotHits.has(i);
               const isMiss = shotMisses.has(i);
               const canFire = canShoot && !isHit && !isMiss;
-              let bg = "#d6eaf8";
-              if (isHit) bg = "#e74c3c";
-              if (isMiss) bg = "#85c1e9";
+              let cls = "bs-cell-empty";
+              if (isHit) cls = "bs-cell-hit";
+              if (isMiss) cls = "bs-cell-miss";
               return (
-                <div key={i} className="bs-cell"
-                  style={{ background: bg, cursor: canFire ? "crosshair" : "default" }}
+                <div key={i} className={`bs-cell ${cls}`}
+                  style={{ cursor: canFire ? "crosshair" : "default" }}
                   onClick={() => canFire && (isComputer ? handleComputerShot(i) : handleOnlineShot(i))}
                 />
               );
@@ -519,18 +562,24 @@ function Battleship() {
         </div>
       </div>
 
-      <div style={{ marginTop: "0.5rem", fontSize: "0.8rem", color: "#555" }}>
+      <div style={{ fontSize: "0.78rem", color: "rgba(255,255,255,0.35)", marginTop: "0.5rem" }}>
         🔴 {t.hit} &nbsp; 🔵 {t.miss} &nbsp; ⬛ {t.myShip}
       </div>
 
-      {game.winner && (
-        <button className="primary-btn" onClick={handleStart} style={{ marginTop: "1rem", marginRight: "0.5rem" }}>
-          {t.newGame}
-        </button>
+      {showOverlay && overlayResult && (
+        <GameResultOverlay
+          result={overlayResult}
+          winnerName={game.winner === "X" ? nameX : nameO}
+          onClose={() => setShowOverlay(false)}
+        >
+          <button className="btn-primary" onClick={() => { setShowOverlay(false); handleStart(); }}>{t.newGame}</button>
+          <button className="btn-secondary" onClick={() => setShowOverlay(false)}>✕</button>
+        </GameResultOverlay>
       )}
-      <button className="secondary-btn" onClick={() => navigate("/")} style={{ marginTop: "1rem" }}>
-        {t.gameSelection}
-      </button>
+
+      <TurnBanner show={showTurnBanner} text={turnBannerTextRef.current} />
+
+      {showRules && <RulesModal gameKey="battleship" onClose={() => setShowRules(false)} />}
     </div>
   );
 }

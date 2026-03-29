@@ -4,6 +4,8 @@ import { db } from "./firebaseClient";
 import { ref, set, update, get, onValue, push, onDisconnect } from "firebase/database";
 import { v4 as uuidv4 } from "uuid";
 import { useLanguage } from "./LanguageContext";
+import RulesModal from "./RulesModal";
+import { GameResultOverlay } from "./GameOverlay";
 
 const emptyBoard = Array(9).fill(null);
 
@@ -75,6 +77,7 @@ function OnlineGame() {
   const [playerName, setPlayerName] = useState(() => localStorage.getItem("playerName") || "");
   const [nameInput, setNameInput] = useState("");
   const [aiThinking, setAiThinking] = useState(false);
+  const [showOverlay, setShowOverlay] = useState(false);
   const disconnectRef = useRef(null);
 
   const [playerId] = useState(() => {
@@ -96,6 +99,12 @@ function OnlineGame() {
     });
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isComputer]);
+
+  useEffect(() => {
+    if (!game?.winner) { setShowOverlay(false); return; }
+    const timer = setTimeout(() => setShowOverlay(true), 600);
+    return () => clearTimeout(timer);
+  }, [game?.winner]);
 
   const doAiMove = useCallback((board) => {
     setAiThinking(true);
@@ -272,47 +281,61 @@ function OnlineGame() {
   const nameO = game?.player_o_name || (isComputer ? t.computer : "Player O");
   const inviteLink = `${window.location.origin}/tictactoe?gameId=${game?.id}&mode=online`;
   const effectiveSymbol = isComputer ? "X" : playerSymbol;
+  const [showRules, setShowRules] = useState(false);
+  const [copied, setCopied] = useState(false);
+
+  const copyLink = (link) => { navigator.clipboard.writeText(link); setCopied(true); setTimeout(() => setCopied(false), 2000); };
+
+  const topBar = (
+    <div style={{ display: "flex", justifyContent: "flex-end", width: "100%", maxWidth: "500px", padding: "0.5rem 1rem 0" }}>
+      <button className="btn-icon" onClick={() => setShowRules(true)}>📖 {t.rules}</button>
+    </div>
+  );
 
   if (!gameIdFromUrl && !isComputer) {
     return (
-      <div style={{ textAlign: "center", marginTop: "4rem", padding: "0 1rem" }}>
-        <h1>✖️ {t.tictactoe}</h1>
-        <p>{t.enterName}</p>
-        <input
-          type="text" value={nameInput}
+      <div className="fade-in" style={{ textAlign: "center", padding: "2rem 1rem" }}>
+        {topBar}
+        <h1 className="game-title">✖️ {t.tictactoe}</h1>
+        <p style={{ color: "rgba(255,255,255,0.5)", marginBottom: "1rem" }}>{t.enterName}</p>
+        <input type="text" value={nameInput}
           onChange={(e) => setNameInput(e.target.value)}
           onKeyDown={(e) => e.key === "Enter" && handleNameAndStart()}
           className="name-input" placeholder={t.namePlaceholder}
         />
         <br />
-        <button className="primary-btn" onClick={handleNameAndStart} style={{ marginTop: "1rem" }}>
+        <button className="btn-primary" onClick={handleNameAndStart} style={{ marginTop: "1rem" }}>
           {t.startGame}
         </button>
-        <br /><br />
-        <button className="secondary-btn" onClick={() => navigate("/")}>{t.back}</button>
+        {showRules && <RulesModal gameKey="tictactoe" onClose={() => setShowRules(false)} />}
       </div>
     );
   }
 
-  if (!game) return <div style={{ textAlign: "center", marginTop: "4rem" }}>{t.loading}</div>;
+  if (!game) return <div style={{ textAlign: "center", marginTop: "4rem", color: "rgba(255,255,255,0.5)" }}>{t.loading}</div>;
 
   if (!playerName && effectiveSymbol !== "Spectator" && !isComputer) {
     return (
-      <div style={{ textAlign: "center", marginTop: "4rem", padding: "0 1rem" }}>
-        <h2>{t.enterNameFirst}</h2>
+      <div className="fade-in" style={{ textAlign: "center", marginTop: "4rem", padding: "0 1rem" }}>
+        <h2 style={{ color: "rgba(255,255,255,0.7)", marginBottom: "1rem" }}>{t.enterNameFirst}</h2>
         <input type="text" value={nameInput}
           onChange={(e) => setNameInput(e.target.value)}
           onKeyDown={(e) => e.key === "Enter" && handleNameSubmit()}
           className="name-input" />
         <br />
-        <button className="primary-btn" onClick={handleNameSubmit} style={{ marginTop: "1rem" }}>
+        <button className="btn-primary" onClick={handleNameSubmit} style={{ marginTop: "1rem" }}>
           {t.confirmName}
         </button>
       </div>
     );
   }
 
+  const overlayResult = !game.winner ? null
+    : game.winner === "Draw" ? "draw"
+    : game.winner === effectiveSymbol ? "win" : "loss";
+
   const myTurn = isComputer ? game.turn === "X" : game.turn === effectiveSymbol;
+  const statusClass = game.winner === "Draw" ? "status-draw" : game.winner ? "status-win" : myTurn ? "status-turn" : "status-wait";
   const statusText = game.winner === "Draw"
     ? `🤝 ${t.draw}`
     : game.winner
@@ -322,25 +345,25 @@ function OnlineGame() {
     : `⏳ ${game.turn === "X" ? nameX : nameO}...`;
 
   return (
-    <div style={{ textAlign: "center", padding: "1rem" }}>
-      <h1>{t.tictactoe}</h1>
-      <h2 style={{ minHeight: "2rem" }}>{statusText}</h2>
+    <div className="fade-in" style={{ textAlign: "center", padding: "0.5rem 1rem 1rem" }}>
+      {topBar}
+      <h1 className="game-title">✖️ {t.tictactoe}</h1>
+      <div className={`status-badge ${statusClass}`}>{statusText}</div>
 
-      {!isComputer && (
-        <p style={{ fontSize: "0.9rem", color: "#555" }}>
-          {t.playAs}: <strong>{effectiveSymbol}</strong> ({playerName})
-        </p>
-      )}
+      <div className="player-bar">
+        <span className="player-x">✖️ {nameX}</span>
+        <span>{t.vs}</span>
+        <span className="player-o">⭕ {nameO}</span>
+        {!isComputer && <span>— {t.playAs}: <strong>{effectiveSymbol}</strong></span>}
+      </div>
 
       {!isComputer && effectiveSymbol === "X" && !game.player_o && (
-        <div style={{ marginBottom: "1rem" }}>
+        <div className="invite-box">
           <p>{t.inviteFriend}</p>
-          <input readOnly value={inviteLink}
-            style={{ width: "80%", maxWidth: "350px", padding: "0.4rem", fontSize: "0.85rem" }}
-            onClick={(e) => e.target.select()} />
-          <button onClick={() => navigator.clipboard.writeText(inviteLink)} style={{ marginLeft: "0.5rem" }}>
-            {t.copyLink}
-          </button>
+          <div className="invite-row">
+            <input readOnly value={inviteLink} className="invite-input" onClick={(e) => e.target.select()} />
+            <button className="btn-primary" onClick={() => copyLink(inviteLink)}>{copied ? "✅" : t.copyLink}</button>
+          </div>
         </div>
       )}
 
@@ -360,22 +383,22 @@ function OnlineGame() {
         ))}
       </div>
 
-      {(game.winner || game.winner === "Draw") && (
-        <div style={{ marginTop: "1.5rem" }}>
-          <button className="primary-btn" onClick={isComputer ? resetComputer : resetOnline} style={{ marginRight: "0.5rem" }}>
-            {t.rematch}
-          </button>
-          {!isComputer && (
-            <button className="primary-btn" onClick={handleStartNewGame}>{t.newGame}</button>
-          )}
-          <br />
-          <button className="secondary-btn" onClick={() => navigate("/")} style={{ marginTop: "0.5rem" }}>
-            {t.gameSelection}
-          </button>
-        </div>
+      {showOverlay && overlayResult && (
+        <GameResultOverlay
+          result={overlayResult}
+          winnerName={game.winner === "X" ? nameX : nameO}
+          onClose={() => setShowOverlay(false)}
+        >
+          <button className="btn-primary" onClick={() => { setShowOverlay(false); isComputer ? resetComputer() : resetOnline(); }}>{t.rematch}</button>
+          {!isComputer && <button className="btn-primary" onClick={() => { setShowOverlay(false); handleStartNewGame(); }}>{t.newGame}</button>}
+          <button className="btn-secondary" onClick={() => setShowOverlay(false)}>✕</button>
+        </GameResultOverlay>
       )}
+
+      {showRules && <RulesModal gameKey="tictactoe" onClose={() => setShowRules(false)} />}
+
       {!game.winner && (
-        <button className="secondary-btn" onClick={() => navigate("/")} style={{ marginTop: "1.5rem" }}>
+        <button className="btn-secondary" onClick={() => navigate("/")} style={{ marginTop: "1.5rem" }}>
           {t.gameSelection}
         </button>
       )}

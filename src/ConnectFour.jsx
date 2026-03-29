@@ -4,6 +4,8 @@ import { db } from "./firebaseClient";
 import { ref, set, update, get, onValue, push, onDisconnect } from "firebase/database";
 import { v4 as uuidv4 } from "uuid";
 import { useLanguage } from "./LanguageContext";
+import RulesModal from "./RulesModal";
+import { GameResultOverlay } from "./GameOverlay";
 
 const ROWS = 6;
 const COLS = 7;
@@ -136,6 +138,7 @@ function ConnectFour() {
   const [playerSymbol, setPlayerSymbol] = useState(null);
   const [playerName] = useState(() => localStorage.getItem("playerName") || "");
   const [aiThinking, setAiThinking] = useState(false);
+  const [showOverlay, setShowOverlay] = useState(false);
 
   const [playerId] = useState(() => {
     let s = localStorage.getItem("playerId");
@@ -161,6 +164,12 @@ function ConnectFour() {
     });
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isComputer]);
+
+  useEffect(() => {
+    if (!game?.winner) { setShowOverlay(false); return; }
+    const timer = setTimeout(() => setShowOverlay(true), 600);
+    return () => clearTimeout(timer);
+  }, [game?.winner]);
 
   const doAiMove = useCallback((currentBoard) => {
     setAiThinking(true);
@@ -315,63 +324,73 @@ function ConnectFour() {
 
   const effectiveSymbol = isComputer ? "X" : playerSymbol;
   const nameX = game?.player_x_name || "Player X";
-  const nameO = game?.player_o_name || "Player O";
+  const nameO = game?.player_o_name || (isComputer ? t.computer : "Player O");
   const inviteLink = `${window.location.origin}/connect4?gameId=${game?.id}&mode=online`;
+  const [showRules, setShowRules] = useState(false);
+  const [copied, setCopied] = useState(false);
+
+  const copyLink = (link) => { navigator.clipboard.writeText(link); setCopied(true); setTimeout(() => setCopied(false), 2000); };
+
+  const topBar = (
+    <div style={{ display: "flex", justifyContent: "flex-end", width: "100%", maxWidth: "600px", padding: "0.5rem 1rem 0" }}>
+      <button className="btn-icon" onClick={() => setShowRules(true)}>📖 {t.rules}</button>
+    </div>
+  );
 
   if (!gameIdFromUrl && !isComputer) {
     return (
-      <div style={{ textAlign: "center", marginTop: "4rem", padding: "0 1rem" }}>
-        <h1>🔴 {t.connectFour}</h1>
-        <p>{playerName}</p>
-        <button className="primary-btn" onClick={handleStart}>{t.startGame}</button>
-        <br /><br />
-        <button className="secondary-btn" onClick={() => navigate("/")}>{t.back}</button>
+      <div className="fade-in" style={{ textAlign: "center", padding: "2rem 1rem" }}>
+        {topBar}
+        <h1 className="game-title">🔴 {t.connectFour}</h1>
+        <p style={{ color: "rgba(255,255,255,0.5)", marginBottom: "1.5rem" }}>{playerName}</p>
+        <button className="btn-primary" onClick={handleStart}>{t.startGame}</button>
+        {showRules && <RulesModal gameKey="connect4" onClose={() => setShowRules(false)} />}
       </div>
     );
   }
 
-  if (!game) return <div style={{ textAlign: "center", marginTop: "4rem" }}>{t.loading}</div>;
+  if (!game) return <div style={{ textAlign: "center", marginTop: "4rem", color: "rgba(255,255,255,0.5)" }}>{t.loading}</div>;
+
+  const overlayResult = !game.winner ? null
+    : game.winner === "Draw" ? "draw"
+    : game.winner === effectiveSymbol ? "win" : "loss";
 
   const currentTurn = game.turn;
   const myTurn = isComputer ? currentTurn === "X" : currentTurn === effectiveSymbol;
+  const statusClass = game.winner === "Draw" ? "status-draw" : game.winner ? "status-win" : myTurn ? "status-turn" : "status-wait";
   const statusText = game.winner === "Draw"
     ? `🤝 ${t.draw}`
     : game.winner
     ? `🏆 ${game.winner === "X" ? nameX : nameO} ${t.wins}`
-    : aiThinking
-    ? "🤔 ..."
-    : myTurn
-    ? t.yourTurn
+    : aiThinking ? "🤔 ..."
+    : myTurn ? t.yourTurn
     : `⏳ ${currentTurn === "X" ? nameX : nameO}...`;
 
   return (
-    <div style={{ textAlign: "center", padding: "1rem" }}>
-      <h1>🔴 {t.connectFour}</h1>
-      <h2 style={{ minHeight: "2rem" }}>{statusText}</h2>
+    <div className="fade-in" style={{ textAlign: "center", padding: "0.5rem 0.5rem 1rem" }}>
+      {topBar}
+      <h1 className="game-title">🔴 {t.connectFour}</h1>
+      <div className={`status-badge ${statusClass}`}>{statusText}</div>
 
-      <p style={{ fontSize: "0.9rem", color: "#555" }}>
-        <span style={{ color: "#e74c3c" }}>🔴 {nameX}</span>
-        {" vs "}
-        <span style={{ color: "#f39c12" }}>🟡 {nameO}</span>
-        {!isComputer && ` — ${t.playAs}: ${effectiveSymbol}`}
-      </p>
+      <div className="player-bar">
+        <span className="player-x">🔴 {nameX}</span>
+        <span>{t.vs}</span>
+        <span className="player-o">🟡 {nameO}</span>
+        {!isComputer && <span>— {t.playAs}: <strong>{effectiveSymbol}</strong></span>}
+      </div>
 
       {!isComputer && effectiveSymbol === "X" && !game.player_o && (
-        <div style={{ marginBottom: "1rem" }}>
+        <div className="invite-box">
           <p>{t.inviteFriend}</p>
-          <input readOnly value={inviteLink}
-            style={{ width: "80%", maxWidth: "350px", padding: "0.4rem", fontSize: "0.85rem" }}
-            onClick={(e) => e.target.select()} />
-          <button onClick={() => navigator.clipboard.writeText(inviteLink)} style={{ marginLeft: "0.5rem" }}>
-            {t.copyLink}
-          </button>
-          <p style={{ color: "#888" }}>{t.waitingOpponent}</p>
+          <div className="invite-row">
+            <input readOnly value={inviteLink} className="invite-input" onClick={(e) => e.target.select()} />
+            <button className="btn-primary" onClick={() => copyLink(inviteLink)}>{copied ? "✅" : t.copyLink}</button>
+          </div>
+          <p style={{ color: "rgba(255,255,255,0.35)", fontSize: "0.82rem" }}>{t.waitingOpponent}</p>
         </div>
       )}
 
-      {/* Unified board: arrow row + circles in one grid */}
-      <div className="c4-board-wrapper">
-        {/* Arrow buttons — same column widths as board */}
+      <div className="c4-board-wrapper" style={{ marginTop: "0.75rem" }}>
         <div className="c4-arrows">
           {Array.from({ length: COLS }, (_, col) => (
             <button
@@ -384,35 +403,31 @@ function ConnectFour() {
             </button>
           ))}
         </div>
-
-        {/* Board */}
         <div className="c4-board">
           {game.board.map((cell, index) => {
             const isWin = Array.isArray(game.winningCells) && game.winningCells.includes(index);
             return (
               <div key={index} className="c4-cell">
-                <div
-                  className={`c4-disc ${cell === "X" ? "disc-x" : cell === "O" ? "disc-o" : "disc-empty"} ${isWin ? "disc-win" : ""}`}
-                />
+                <div className={`c4-disc ${cell === "X" ? "disc-x" : cell === "O" ? "disc-o" : "disc-empty"} ${isWin ? "disc-win" : ""}`} />
               </div>
             );
           })}
         </div>
       </div>
 
-      {(game.winner || game.winner === "Draw") && (
-        <div style={{ marginTop: "1.5rem" }}>
-          <button className="primary-btn" onClick={isComputer ? resetComputer : resetOnline} style={{ marginRight: "0.5rem" }}>
-            {t.rematch}
-          </button>
-          <button className="secondary-btn" onClick={() => navigate("/")}>{t.gameSelection}</button>
-        </div>
+      {showOverlay && overlayResult && (
+        <GameResultOverlay
+          result={overlayResult}
+          winnerName={game.winner === "X" ? nameX : nameO}
+          onClose={() => setShowOverlay(false)}
+        >
+          <button className="btn-primary" onClick={() => { setShowOverlay(false); isComputer ? resetComputer() : resetOnline(); }}>{t.rematch}</button>
+          {!isComputer && <button className="btn-primary" onClick={() => { setShowOverlay(false); handleStart(); }}>{t.newGame}</button>}
+          <button className="btn-secondary" onClick={() => setShowOverlay(false)}>✕</button>
+        </GameResultOverlay>
       )}
-      {!game.winner && (
-        <button className="secondary-btn" onClick={() => navigate("/")} style={{ marginTop: "1rem" }}>
-          {t.gameSelection}
-        </button>
-      )}
+
+      {showRules && <RulesModal gameKey="connect4" onClose={() => setShowRules(false)} />}
     </div>
   );
 }
