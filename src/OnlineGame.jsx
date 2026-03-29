@@ -1,15 +1,7 @@
 import { useEffect, useState, useRef } from "react";
 import { useSearchParams, useNavigate } from "react-router-dom";
 import { db } from "./firebaseClient";
-import {
-  ref,
-  set,
-  update,
-  get,
-  onValue,
-  push,
-  onDisconnect,
-} from "firebase/database";
+import { ref, set, update, get, onValue, push, onDisconnect } from "firebase/database";
 import { v4 as uuidv4 } from "uuid";
 
 const emptyBoard = Array(9).fill(null);
@@ -45,9 +37,8 @@ function OnlineGame() {
   };
 
   const createGame = async (name) => {
-    const gamesRef = ref(db, "games");
+    const gamesRef = ref(db, "tictactoe");
     const newGameRef = push(gamesRef);
-
     await set(newGameRef, {
       board: emptyBoard,
       turn: "X",
@@ -58,18 +49,14 @@ function OnlineGame() {
       winner: null,
       winningCells: [],
     });
-
-    // Spiel automatisch löschen wenn der Ersteller die Session verlässt
-    const dc = onDisconnect(newGameRef);
-    dc.remove();
-    disconnectRef.current = dc;
-
+    onDisconnect(newGameRef).remove();
+    disconnectRef.current = newGameRef;
     return newGameRef.key;
   };
 
   const handleStartNewGame = async () => {
     const gameId = await createGame(playerName);
-    navigate(`/?gameId=${gameId}`);
+    navigate(`/tictactoe?gameId=${gameId}`);
   };
 
   const handleNameAndStartGame = async () => {
@@ -78,14 +65,12 @@ function OnlineGame() {
     localStorage.setItem("playerName", trimmed);
     setPlayerName(trimmed);
     const gameId = await createGame(trimmed);
-    navigate(`/?gameId=${gameId}`);
+    navigate(`/tictactoe?gameId=${gameId}`);
   };
 
-  // Spiel laden & Rolle bestimmen
   useEffect(() => {
     if (!gameIdFromUrl) return;
-
-    const gameRef = ref(db, `games/${gameIdFromUrl}`);
+    const gameRef = ref(db, `tictactoe/${gameIdFromUrl}`);
 
     const initGame = async () => {
       const snapshot = await get(gameRef);
@@ -101,20 +86,14 @@ function OnlineGame() {
 
       if (data.player_x === playerId) {
         setPlayerSymbol("X");
-        // Host: Spiel löschen wenn er geht
-        const dc = onDisconnect(gameRef);
-        dc.remove();
-        disconnectRef.current = dc;
+        onDisconnect(gameRef).remove();
       } else if (!data.player_o) {
         const joinData = { player_o: playerId };
         const storedName = localStorage.getItem("playerName");
         if (storedName) joinData.player_o_name = storedName;
         await update(gameRef, joinData);
         setPlayerSymbol("O");
-        // Spieler O: seinen Slot beim Verlassen leeren
-        const dc = onDisconnect(ref(db, `games/${gameIdFromUrl}/player_o`));
-        dc.set(null);
-        disconnectRef.current = dc;
+        onDisconnect(ref(db, `tictactoe/${gameIdFromUrl}/player_o`)).set(null);
       } else if (data.player_o === playerId) {
         setPlayerSymbol("O");
       } else {
@@ -123,17 +102,11 @@ function OnlineGame() {
     };
 
     initGame();
-
-    return () => {
-      // onDisconnect bleibt aktiv für echte Disconnects
-    };
   }, [gameIdFromUrl, playerId, navigate]);
 
-  // Echtzeit-Updates abonnieren
   useEffect(() => {
     if (!gameIdFromUrl) return;
-
-    const gameRef = ref(db, `games/${gameIdFromUrl}`);
+    const gameRef = ref(db, `tictactoe/${gameIdFromUrl}`);
     const unsubscribe = onValue(gameRef, (snapshot) => {
       if (snapshot.exists()) {
         const data = snapshot.val();
@@ -143,47 +116,36 @@ function OnlineGame() {
         setGame({ ...data, board, id: gameIdFromUrl });
       }
     });
-
     return () => unsubscribe();
   }, [gameIdFromUrl]);
 
-  // Namen aktualisieren wenn gesetzt
   useEffect(() => {
     const updateName = async () => {
       if (!game || playerSymbol === "Spectator" || !playerName) return;
-
-      const gameRef = ref(db, `games/${game.id}`);
+      const gameRef = ref(db, `tictactoe/${game.id}`);
       const updates = {};
       if (playerSymbol === "X" && !game.player_x_name) {
         updates.player_x_name = playerName;
       } else if (playerSymbol === "O" && !game.player_o_name) {
         updates.player_o_name = playerName;
       }
-
       if (Object.keys(updates).length > 0) {
         await update(gameRef, updates);
       }
     };
-
     updateName();
   }, [playerName, game, playerSymbol]);
 
   const handleMove = async (index) => {
-    const gameRef = ref(db, `games/${game.id}`);
+    const gameRef = ref(db, `tictactoe/${game.id}`);
     const snapshot = await get(gameRef);
     const freshData = snapshot.val();
 
-    // Firebase lässt null-Werte im Array weg — normalisieren
     const freshBoard = Array.from({ length: 9 }, (_, i) =>
       freshData.board ? (freshData.board[i] ?? null) : null
     );
 
-    if (
-      freshBoard[index] ||
-      freshData.winner ||
-      freshData.turn !== playerSymbol
-    )
-      return;
+    if (freshBoard[index] || freshData.winner || freshData.turn !== playerSymbol) return;
 
     const newBoard = [...freshBoard];
     newBoard[index] = playerSymbol;
@@ -204,7 +166,7 @@ function OnlineGame() {
 
   const resetGame = async () => {
     if (!game) return;
-    const gameRef = ref(db, `games/${game.id}`);
+    const gameRef = ref(db, `tictactoe/${game.id}`);
     await update(gameRef, {
       board: emptyBoard,
       turn: "X",
@@ -213,14 +175,14 @@ function OnlineGame() {
     });
   };
 
-  const inviteLink = `${window.location.origin}/?gameId=${game?.id}`;
+  const inviteLink = `${window.location.origin}/tictactoe?gameId=${game?.id}`;
   const nameX = game?.player_x_name || "Player X";
   const nameO = game?.player_o_name || "Player O";
 
   if (!gameIdFromUrl) {
     return (
       <div style={{ textAlign: "center", marginTop: "5rem" }}>
-        <h1>Willkommen bei Tic Tac Toe</h1>
+        <h1>✖️ Tic Tac Toe</h1>
         <p>Gib deinen Namen ein, um ein Spiel zu starten:</p>
         <input
           type="text"
@@ -230,12 +192,11 @@ function OnlineGame() {
           style={{ padding: "0.5rem", fontSize: "1rem", width: "250px" }}
         />
         <br />
-        <button
-          onClick={handleNameAndStartGame}
-          style={{ marginTop: "1rem", padding: "0.5rem 1rem" }}
-        >
+        <button onClick={handleNameAndStartGame} style={{ marginTop: "1rem" }}>
           Spiel starten
         </button>
+        <br /><br />
+        <button onClick={() => navigate("/")}>← Zurück</button>
       </div>
     );
   }
@@ -254,10 +215,7 @@ function OnlineGame() {
           style={{ padding: "0.5rem", fontSize: "1rem", width: "250px" }}
         />
         <br />
-        <button
-          onClick={handleNameSubmit}
-          style={{ marginTop: "1rem", padding: "0.5rem 1rem" }}
-        >
+        <button onClick={handleNameSubmit} style={{ marginTop: "1rem" }}>
           Bestätigen
         </button>
       </div>
@@ -284,9 +242,7 @@ function OnlineGame() {
           : `${game.turn === "X" ? nameX : nameO} ist dran`}
       </h2>
 
-      <p>
-        Du spielst als: <strong>{playerSymbol}</strong> ({playerName})
-      </p>
+      <p>Du spielst als: <strong>{playerSymbol}</strong> ({playerName})</p>
 
       {playerSymbol === "X" && !game.player_o && (
         <div style={{ marginBottom: "1rem" }}>
@@ -311,8 +267,7 @@ function OnlineGame() {
           <div
             key={index}
             className={`grid-element ${
-              Array.isArray(game.winningCells) &&
-              game.winningCells.includes(index)
+              Array.isArray(game.winningCells) && game.winningCells.includes(index)
                 ? "winner-cell"
                 : game.winner
                 ? "faded"
@@ -328,12 +283,20 @@ function OnlineGame() {
       {(game.winner || game.winner === "Draw") && (
         <div style={{ marginTop: "2rem" }}>
           <button onClick={resetGame} style={{ margin: "1rem" }}>
-            Rematch (gleiches Spiel)
+            Rematch
           </button>
-          <button onClick={handleStartNewGame}>
-            Neues Spiel mit anderem Gegner
+          <button onClick={handleStartNewGame}>Neues Spiel</button>
+          <br />
+          <button onClick={() => navigate("/")} style={{ marginTop: "1rem" }}>
+            ← Spielauswahl
           </button>
         </div>
+      )}
+
+      {!game.winner && (
+        <button onClick={() => navigate("/")} style={{ marginTop: "2rem" }}>
+          ← Spielauswahl
+        </button>
       )}
     </div>
   );
@@ -341,14 +304,9 @@ function OnlineGame() {
 
 function checkWinner(board) {
   const lines = [
-    [0, 1, 2],
-    [3, 4, 5],
-    [6, 7, 8],
-    [0, 3, 6],
-    [1, 4, 7],
-    [2, 5, 8],
-    [0, 4, 8],
-    [2, 4, 6],
+    [0, 1, 2], [3, 4, 5], [6, 7, 8],
+    [0, 3, 6], [1, 4, 7], [2, 5, 8],
+    [0, 4, 8], [2, 4, 6],
   ];
   for (const [a, b, c] of lines) {
     if (board[a] && board[a] === board[b] && board[a] === board[c]) {
