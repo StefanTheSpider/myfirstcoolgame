@@ -11,5 +11,11 @@ const firebaseConfig = {
   appId: process.env.REACT_APP_FIREBASE_APP_ID,
 };
 
+if (!firebaseConfig.apiKey) {
+  throw new Error(
+    "Firebase Umgebungsvariablen fehlen. Bitte REACT_APP_FIREBASE_* in Netlify setzen und neu deployen."
+  );
+}
+
 const app = initializeApp(firebaseConfig);
 export const db = getDatabase(app);
