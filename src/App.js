@@ -1,5 +1,5 @@
 import { Component } from "react";
-import { Routes, Route } from "react-router-dom";
+import { Routes, Route, useNavigate, useLocation } from "react-router-dom";
 import { useLanguage } from "./LanguageContext";
 import GameSelector from "./GameSelector";
 import OnlineGame from "./OnlineGame";
@@ -13,9 +13,9 @@ class ErrorBoundary extends Component {
   render() {
     if (this.state.error) {
       return (
-        <div style={{ textAlign: "center", marginTop: "5rem", color: "red" }}>
+        <div style={{ textAlign: "center", marginTop: "5rem", color: "#f87171" }}>
           <h2>Fehler / Error</h2>
-          <p>{this.state.error.message}</p>
+          <p style={{ color: "rgba(255,255,255,0.5)", marginTop: "0.5rem" }}>{this.state.error.message}</p>
         </div>
       );
     }
@@ -23,12 +23,28 @@ class ErrorBoundary extends Component {
   }
 }
 
-function LangToggle() {
-  const { language, toggleLanguage } = useLanguage();
+function TopBar() {
+  const { language, toggleLanguage, t } = useLanguage();
+  const navigate = useNavigate();
+  const location = useLocation();
+  const isHome = location.pathname === "/";
+
   return (
-    <button className="lang-toggle" onClick={toggleLanguage}>
-      {language === "de" ? "🇬🇧 EN" : "🇩🇪 DE"}
-    </button>
+    <div className="top-bar">
+      <div className="top-bar-left">
+        {!isHome && (
+          <button className="btn-icon" onClick={() => navigate("/")}>
+            🏠 {t.gameSelection}
+          </button>
+        )}
+        {isHome && <span className="top-bar-title">🎮 {t.selectGame}</span>}
+      </div>
+      <div className="top-bar-right">
+        <button className="lang-toggle" onClick={toggleLanguage}>
+          {language === "de" ? "🇬🇧 EN" : "🇩🇪 DE"}
+        </button>
+      </div>
+    </div>
   );
 }
 
@@ -36,20 +52,22 @@ function App() {
   const { t } = useLanguage();
   return (
     <ErrorBoundary>
-      <LangToggle />
+      <TopBar />
       <div className="App">
-        <Routes>
-          <Route path="/" element={<GameSelector />} />
-          <Route path="/tictactoe" element={<OnlineGame />} />
-          <Route path="/rps" element={<RockPaperScissors />} />
-          <Route path="/connect4" element={<ConnectFour />} />
-          <Route path="/battleship" element={<Battleship />} />
-        </Routes>
-        <div className="powered-by">
-          <p>{t.poweredBy}</p>
-          <a href="https://coding-kitchen.com/" target="_blank" rel="noopener noreferrer">
-            <img src="/coding-kitchen_logo.png" alt="coding kitchen logo" style={{ maxWidth: "150px" }} />
-          </a>
+        <div className="page">
+          <Routes>
+            <Route path="/" element={<GameSelector />} />
+            <Route path="/tictactoe" element={<OnlineGame />} />
+            <Route path="/rps" element={<RockPaperScissors />} />
+            <Route path="/connect4" element={<ConnectFour />} />
+            <Route path="/battleship" element={<Battleship />} />
+          </Routes>
+          <div className="powered-by">
+            <p>{t.poweredBy}</p>
+            <a href="https://coding-kitchen.com/" target="_blank" rel="noopener noreferrer">
+              <img src="/coding-kitchen_logo.png" alt="coding kitchen logo" />
+            </a>
+          </div>
         </div>
       </div>
     </ErrorBoundary>

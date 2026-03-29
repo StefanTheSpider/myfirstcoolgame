@@ -3,33 +3,21 @@ import { useNavigate } from "react-router-dom";
 import { useLanguage } from "./LanguageContext";
 
 const GAMES = [
-  { key: "tictactoe", icon: "✖️", path: "/tictactoe" },
-  { key: "connectFour", icon: "🔴", path: "/connect4" },
-  { key: "rps", icon: "✌️", path: "/rps" },
-  { key: "battleship", icon: "🚢", path: "/battleship" },
+  { key: "tictactoe", icon: "✖️", path: "/tictactoe", descKey: "tictactoeDesc" },
+  { key: "connectFour", icon: "🔴", path: "/connect4", descKey: "connectFourDesc" },
+  { key: "rps", icon: "✌️", path: "/rps", descKey: "rpsDesc" },
+  { key: "battleship", icon: "🚢", path: "/battleship", descKey: "battleshipDesc" },
 ];
-
-const GAME_DESC_KEYS = {
-  tictactoe: "tictactoeDesc",
-  connectFour: "connectFourDesc",
-  rps: "rpsDesc",
-  battleship: "battleshipDesc",
-};
 
 function GameSelector() {
   const navigate = useNavigate();
   const { t } = useLanguage();
-  const [nameInput, setNameInput] = useState(
-    () => localStorage.getItem("playerName") || ""
-  );
+  const [nameInput, setNameInput] = useState(() => localStorage.getItem("playerName") || "");
   const [error, setError] = useState("");
   const [selectedGame, setSelectedGame] = useState(null);
 
   const handleCardClick = (game) => {
-    if (!nameInput.trim()) {
-      setError(t.nameError);
-      return;
-    }
+    if (!nameInput.trim()) { setError(t.nameError); return; }
     localStorage.setItem("playerName", nameInput.trim());
     setError("");
     setSelectedGame(game);
@@ -42,38 +30,36 @@ function GameSelector() {
   };
 
   return (
-    <div style={{ textAlign: "center", marginTop: "2rem", padding: "0 1rem" }}>
-      <h1>🎮 {t.selectGame}</h1>
-      <p>{t.enterName}</p>
-      <input
-        type="text"
-        value={nameInput}
-        onChange={(e) => { setNameInput(e.target.value); setError(""); }}
-        placeholder={t.namePlaceholder}
-        className="name-input"
-        onKeyDown={(e) => e.key === "Enter" && e.target.blur()}
-      />
-      {error && <p style={{ color: "red", margin: "0.4rem 0" }}>{error}</p>}
+    <div className="fade-in" style={{ width: "100%", display: "flex", flexDirection: "column", alignItems: "center" }}>
+      <div className="selector-hero">
+        <h1>🎮 {t.selectGame}</h1>
+        <p>{t.enterName}</p>
+        <input
+          type="text"
+          value={nameInput}
+          onChange={(e) => { setNameInput(e.target.value); setError(""); }}
+          placeholder={t.namePlaceholder}
+          className="name-input"
+          onKeyDown={(e) => e.key === "Enter" && e.target.blur()}
+        />
+        {error && <p style={{ color: "#f87171", fontSize: "0.85rem", marginTop: "0.4rem" }}>{error}</p>}
+      </div>
 
       <div className="game-selector-grid">
         {GAMES.map((game) => (
-          <div
-            key={game.path}
-            className="game-card"
-            onClick={() => handleCardClick(game)}
-          >
-            <div className="game-card-icon">{game.icon}</div>
+          <div key={game.path} className="game-card" onClick={() => handleCardClick(game)}>
+            <span className="game-card-icon">{game.icon}</span>
             <h2>{t[game.key]}</h2>
-            <p>{t[GAME_DESC_KEYS[game.key]]}</p>
+            <p>{t[game.descKey]}</p>
           </div>
         ))}
       </div>
 
-      {/* Mode selection overlay */}
       {selectedGame && (
         <div className="mode-overlay" onClick={() => setSelectedGame(null)}>
-          <div className="mode-modal" onClick={(e) => e.stopPropagation()}>
+          <div className="mode-modal pop" onClick={(e) => e.stopPropagation()}>
             <h2>{selectedGame.icon} {t[selectedGame.key]}</h2>
+            <p style={{ color: "rgba(255,255,255,0.45)", fontSize: "0.9rem", marginBottom: "1rem" }}>{t.chooseMode}</p>
             <div className="mode-buttons">
               <button className="mode-btn online-btn" onClick={() => handleMode("online")}>
                 🌐 {t.online}
@@ -82,9 +68,7 @@ function GameSelector() {
                 🤖 {t.vsComputer}
               </button>
             </div>
-            <button className="mode-cancel" onClick={() => setSelectedGame(null)}>
-              {t.back}
-            </button>
+            <button className="mode-cancel" onClick={() => setSelectedGame(null)}>{t.back}</button>
           </div>
         </div>
       )}
