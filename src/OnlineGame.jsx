@@ -90,7 +90,7 @@ function OnlineGame() {
     const initGame = async () => {
       const snapshot = await get(gameRef);
       if (!snapshot.exists()) {
-        console.error("Spiel nicht gefunden");
+        navigate("/");
         return;
       }
       const data = snapshot.val();
