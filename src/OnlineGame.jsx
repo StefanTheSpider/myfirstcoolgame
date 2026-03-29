@@ -1,6 +1,15 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef } from "react";
 import { useSearchParams, useNavigate } from "react-router-dom";
-import { supabase } from "./supabaseClient";
+import { db } from "./firebaseClient";
+import {
+  ref,
+  set,
+  update,
+  get,
+  onValue,
+  push,
+  onDisconnect,
+} from "firebase/database";
 import { v4 as uuidv4 } from "uuid";
 
 const emptyBoard = Array(9).fill(null);
@@ -12,8 +21,11 @@ function OnlineGame() {
 
   const [game, setGame] = useState(null);
   const [playerSymbol, setPlayerSymbol] = useState(null);
-  const [playerName, setPlayerName] = useState(() => localStorage.getItem("playerName") || "");
+  const [playerName, setPlayerName] = useState(
+    () => localStorage.getItem("playerName") || ""
+  );
   const [nameInput, setNameInput] = useState("");
+  const disconnectRef = useRef(null);
 
   const [playerId] = useState(() => {
     let stored = localStorage.getItem("playerId");
@@ -32,95 +44,105 @@ function OnlineGame() {
     }
   };
 
-  const handleStartNewGame = async () => {
-    const { data, error } = await supabase
-      .from("games")
-      .insert([{ board: emptyBoard, turn: "X", player_x: playerId, player_x_name: playerName }])
-      .select()
-      .single();
+  const createGame = async (name) => {
+    const gamesRef = ref(db, "games");
+    const newGameRef = push(gamesRef);
 
-    if (error) {
-      console.error("Neues Spiel Fehler:", error);
-    } else {
-      navigate(`/?gameId=${data.id}`);
-    }
+    await set(newGameRef, {
+      board: emptyBoard,
+      turn: "X",
+      player_x: playerId,
+      player_x_name: name,
+      player_o: null,
+      player_o_name: null,
+      winner: null,
+      winningCells: [],
+    });
+
+    // Spiel automatisch löschen wenn der Ersteller die Session verlässt
+    const dc = onDisconnect(newGameRef);
+    dc.remove();
+    disconnectRef.current = dc;
+
+    return newGameRef.key;
+  };
+
+  const handleStartNewGame = async () => {
+    const gameId = await createGame(playerName);
+    navigate(`/?gameId=${gameId}`);
   };
 
   const handleNameAndStartGame = async () => {
     const trimmed = nameInput.trim();
     if (!trimmed) return;
-
     localStorage.setItem("playerName", trimmed);
     setPlayerName(trimmed);
-
-    const { data, error } = await supabase
-      .from("games")
-      .insert([{ board: emptyBoard, turn: "X", player_x: playerId, player_x_name: trimmed }])
-      .select()
-      .single();
-
-    if (error) {
-      console.error("Fehler beim Starten:", error);
-    } else {
-      navigate(`/?gameId=${data.id}`);
-    }
+    const gameId = await createGame(trimmed);
+    navigate(`/?gameId=${gameId}`);
   };
 
+  // Spiel laden & Rolle bestimmen
   useEffect(() => {
     if (!gameIdFromUrl) return;
 
+    const gameRef = ref(db, `games/${gameIdFromUrl}`);
+
     const initGame = async () => {
-      const { data, error } = await supabase
-        .from("games")
-        .select("*")
-        .eq("id", gameIdFromUrl)
-        .single();
+      const snapshot = await get(gameRef);
+      if (!snapshot.exists()) {
+        console.error("Spiel nicht gefunden");
+        return;
+      }
+      const data = snapshot.val();
+      setGame({ ...data, id: gameIdFromUrl });
 
-      if (error) {
-        console.error("Ladefehler:", error);
+      if (data.player_x === playerId) {
+        setPlayerSymbol("X");
+        // Host: Spiel löschen wenn er geht
+        const dc = onDisconnect(gameRef);
+        dc.remove();
+        disconnectRef.current = dc;
+      } else if (!data.player_o) {
+        await update(gameRef, { player_o: playerId });
+        setPlayerSymbol("O");
+        // Spieler O: seinen Slot beim Verlassen leeren
+        const dc = onDisconnect(ref(db, `games/${gameIdFromUrl}/player_o`));
+        dc.set(null);
+        disconnectRef.current = dc;
+      } else if (data.player_o === playerId) {
+        setPlayerSymbol("O");
       } else {
-        setGame(data);
-
-        if (data.player_x === playerId) {
-          setPlayerSymbol("X");
-        } else if (!data.player_o) {
-          await supabase
-            .from("games")
-            .update({ player_o: playerId })
-            .eq("id", gameIdFromUrl);
-          setPlayerSymbol("O");
-        } else if (data.player_o === playerId) {
-          setPlayerSymbol("O");
-        } else {
-          setPlayerSymbol("Spectator");
-        }
+        setPlayerSymbol("Spectator");
       }
     };
 
     initGame();
+
+    return () => {
+      // onDisconnect bleibt aktiv für echte Disconnects
+    };
   }, [gameIdFromUrl, playerId]);
 
+  // Echtzeit-Updates abonnieren
   useEffect(() => {
     if (!gameIdFromUrl) return;
 
-    const channel = supabase
-      .channel(`game-${gameIdFromUrl}`)
-      .on(
-        "postgres_changes",
-        { event: "UPDATE", schema: "public", table: "games", filter: `id=eq.${gameIdFromUrl}` },
-        (payload) => setGame(payload.new)
-      )
-      .subscribe();
+    const gameRef = ref(db, `games/${gameIdFromUrl}`);
+    const unsubscribe = onValue(gameRef, (snapshot) => {
+      if (snapshot.exists()) {
+        setGame({ ...snapshot.val(), id: gameIdFromUrl });
+      }
+    });
 
-    return () => {
-      supabase.removeChannel(channel);
-    };
+    return () => unsubscribe();
   }, [gameIdFromUrl]);
 
+  // Namen aktualisieren wenn gesetzt
   useEffect(() => {
     const updateName = async () => {
       if (!game || playerSymbol === "Spectator" || !playerName) return;
 
+      const gameRef = ref(db, `games/${game.id}`);
       const updates = {};
       if (playerSymbol === "X" && !game.player_x_name) {
         updates.player_x_name = playerName;
@@ -129,7 +151,7 @@ function OnlineGame() {
       }
 
       if (Object.keys(updates).length > 0) {
-        await supabase.from("games").update(updates).eq("id", game.id);
+        await update(gameRef, updates);
       }
     };
 
@@ -137,17 +159,16 @@ function OnlineGame() {
   }, [playerName, game, playerSymbol]);
 
   const handleMove = async (index) => {
-    const { data: freshGame } = await supabase
-      .from("games")
-      .select("*")
-      .eq("id", game.id)
-      .single();
+    const gameRef = ref(db, `games/${game.id}`);
+    const snapshot = await get(gameRef);
+    const freshGame = snapshot.val();
 
     if (
       freshGame.board[index] ||
       freshGame.winner ||
       freshGame.turn !== playerSymbol
-    ) return;
+    )
+      return;
 
     const newBoard = [...freshGame.board];
     newBoard[index] = playerSymbol;
@@ -155,30 +176,26 @@ function OnlineGame() {
     const result = checkWinner(newBoard);
     const winner = result ? result.symbol : null;
     const winningCells = result ? result.cells : [];
-    const isDraw = !winner && newBoard.every(cell => cell !== null);
+    const isDraw = !winner && newBoard.every((cell) => cell !== null);
     const nextTurn = playerSymbol === "X" ? "O" : "X";
 
-    await supabase.from("games")
-      .update({
-        board: newBoard,
-        turn: winner || isDraw ? null : nextTurn,
-        winner: winner ? playerSymbol : isDraw ? "Draw" : null,
-        winningCells: winningCells,
-      })
-      .eq("id", game.id);
+    await update(gameRef, {
+      board: newBoard,
+      turn: winner || isDraw ? null : nextTurn,
+      winner: winner ? playerSymbol : isDraw ? "Draw" : null,
+      winningCells: winningCells,
+    });
   };
 
   const resetGame = async () => {
     if (!game) return;
-
-    await supabase.from("games")
-      .update({
-        board: emptyBoard,
-        turn: "X",
-        winner: null,
-        winningCells: [],
-      })
-      .eq("id", game.id);
+    const gameRef = ref(db, `games/${game.id}`);
+    await update(gameRef, {
+      board: emptyBoard,
+      turn: "X",
+      winner: null,
+      winningCells: [],
+    });
   };
 
   const inviteLink = `${window.location.origin}/?gameId=${game?.id}`;
@@ -210,7 +227,6 @@ function OnlineGame() {
 
   if (!game) return <div>Loading...</div>;
 
-  // Name nach Beitritt setzen
   if (!playerName && playerSymbol !== "Spectator") {
     return (
       <div style={{ textAlign: "center", marginTop: "5rem" }}>
@@ -253,7 +269,9 @@ function OnlineGame() {
           : `${game.turn === "X" ? nameX : nameO} ist dran`}
       </h2>
 
-      <p>Du spielst als: <strong>{playerSymbol}</strong> ({playerName})</p>
+      <p>
+        Du spielst als: <strong>{playerSymbol}</strong> ({playerName})
+      </p>
 
       {playerSymbol === "X" && !game.player_o && (
         <div style={{ marginBottom: "1rem" }}>
@@ -278,7 +296,8 @@ function OnlineGame() {
           <div
             key={index}
             className={`grid-element ${
-              Array.isArray(game.winningCells) && game.winningCells.includes(index)
+              Array.isArray(game.winningCells) &&
+              game.winningCells.includes(index)
                 ? "winner-cell"
                 : game.winner
                 ? "faded"
@@ -307,9 +326,14 @@ function OnlineGame() {
 
 function checkWinner(board) {
   const lines = [
-    [0, 1, 2], [3, 4, 5], [6, 7, 8],
-    [0, 3, 6], [1, 4, 7], [2, 5, 8],
-    [0, 4, 8], [2, 4, 6],
+    [0, 1, 2],
+    [3, 4, 5],
+    [6, 7, 8],
+    [0, 3, 6],
+    [1, 4, 7],
+    [2, 5, 8],
+    [0, 4, 8],
+    [2, 4, 6],
   ];
   for (const [a, b, c] of lines) {
     if (board[a] && board[a] === board[b] && board[a] === board[c]) {
