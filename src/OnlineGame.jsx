@@ -94,7 +94,10 @@ function OnlineGame() {
         return;
       }
       const data = snapshot.val();
-      setGame({ ...data, id: gameIdFromUrl });
+      const board = Array.from({ length: 9 }, (_, i) =>
+        data.board ? (data.board[i] ?? null) : null
+      );
+      setGame({ ...data, board, id: gameIdFromUrl });
 
       if (data.player_x === playerId) {
         setPlayerSymbol("X");
@@ -130,7 +133,11 @@ function OnlineGame() {
     const gameRef = ref(db, `games/${gameIdFromUrl}`);
     const unsubscribe = onValue(gameRef, (snapshot) => {
       if (snapshot.exists()) {
-        setGame({ ...snapshot.val(), id: gameIdFromUrl });
+        const data = snapshot.val();
+        const board = Array.from({ length: 9 }, (_, i) =>
+          data.board ? (data.board[i] ?? null) : null
+        );
+        setGame({ ...data, board, id: gameIdFromUrl });
       }
     });
 
