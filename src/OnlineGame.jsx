@@ -106,7 +106,10 @@ function OnlineGame() {
         dc.remove();
         disconnectRef.current = dc;
       } else if (!data.player_o) {
-        await update(gameRef, { player_o: playerId });
+        const joinData = { player_o: playerId };
+        const storedName = localStorage.getItem("playerName");
+        if (storedName) joinData.player_o_name = storedName;
+        await update(gameRef, joinData);
         setPlayerSymbol("O");
         // Spieler O: seinen Slot beim Verlassen leeren
         const dc = onDisconnect(ref(db, `games/${gameIdFromUrl}/player_o`));
@@ -168,16 +171,21 @@ function OnlineGame() {
   const handleMove = async (index) => {
     const gameRef = ref(db, `games/${game.id}`);
     const snapshot = await get(gameRef);
-    const freshGame = snapshot.val();
+    const freshData = snapshot.val();
+
+    // Firebase lässt null-Werte im Array weg — normalisieren
+    const freshBoard = Array.from({ length: 9 }, (_, i) =>
+      freshData.board ? (freshData.board[i] ?? null) : null
+    );
 
     if (
-      freshGame.board[index] ||
-      freshGame.winner ||
-      freshGame.turn !== playerSymbol
+      freshBoard[index] ||
+      freshData.winner ||
+      freshData.turn !== playerSymbol
     )
       return;
 
-    const newBoard = [...freshGame.board];
+    const newBoard = [...freshBoard];
     newBoard[index] = playerSymbol;
 
     const result = checkWinner(newBoard);
