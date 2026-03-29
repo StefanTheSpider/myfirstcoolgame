@@ -124,7 +124,7 @@ function OnlineGame() {
     return () => {
       // onDisconnect bleibt aktiv für echte Disconnects
     };
-  }, [gameIdFromUrl, playerId]);
+  }, [gameIdFromUrl, playerId, navigate]);
 
   // Echtzeit-Updates abonnieren
   useEffect(() => {
