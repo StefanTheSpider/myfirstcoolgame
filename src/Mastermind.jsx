@@ -447,7 +447,7 @@ function Mastermind() {
               {game.secretCode && (
                 <div style={{ display: "flex", gap: "6px", justifyContent: "center", marginTop: "0.4rem" }}>
                   <span style={{ color: "rgba(255,255,255,0.4)", fontSize: "0.8rem" }}>Code: </span>
-                  {(Array.isArray(game.secretCode) ? game.secretCode : Object.values(game.secretCode)).map((c, i) => (
+                  {normalizeArray(game.secretCode, CODE_LEN, 0).map((c, i) => (
                     <span key={i} style={{ fontSize: "1.3rem" }}>{COLORS[c]}</span>
                   ))}
                 </div>

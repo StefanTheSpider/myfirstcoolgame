@@ -298,9 +298,9 @@ function MemoryMatch() {
       } else {
         await update(gameRef, { flipped: newFlipped });
         setIsFlipping(true);
-        setTimeout(async () => {
+        setTimeout(() => {
           const nextSym = playerSymbol === "X" ? "O" : "X";
-          await update(gameRef, { flipped: [], turn: nextSym });
+          update(gameRef, { flipped: [], turn: nextSym });
           setIsFlipping(false);
         }, 1000);
       }

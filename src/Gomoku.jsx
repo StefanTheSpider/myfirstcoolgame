@@ -186,7 +186,10 @@ function Gomoku() {
       const snap = await get(gameRef);
       if (!snap.exists()) { navigate("/"); return; }
       const data = snap.val();
-      setGame({ ...data, board: normalizeArray(data.board, TOTAL), winningCells: normalizeArray(data.winningCells, 5, null).filter(x => x !== null), id: gameIdFromUrl });
+      const initWc = data.winningCells
+        ? (Array.isArray(data.winningCells) ? data.winningCells : Object.values(data.winningCells))
+        : [];
+      setGame({ ...data, board: normalizeArray(data.board, TOTAL), winningCells: initWc, id: gameIdFromUrl });
       if (data.player_x === playerId) {
         setPlayerSymbol("X"); onDisconnect(gameRef).remove();
       } else if (!data.player_o) {
@@ -208,7 +211,9 @@ function Gomoku() {
     const unsub = onValue(gameRef, (snap) => {
       if (snap.exists()) {
         const data = snap.val();
-        const wc = data.winningCells ? Object.values(data.winningCells) : [];
+        const wc = data.winningCells
+          ? (Array.isArray(data.winningCells) ? data.winningCells : Object.values(data.winningCells))
+          : [];
         setGame({ ...data, board: normalizeArray(data.board, TOTAL), winningCells: wc, id: gameIdFromUrl });
       }
     });

@@ -103,119 +103,171 @@ function normalizeShips(raw) {
   return Object.values(raw).map(ship => Array.isArray(ship) ? ship : Object.values(ship).map(Number));
 }
 
-// ── Placement Grid ─────────────────────────────────────────────────────────
+// ── Placement Grid (Drag & Drop) ───────────────────────────────────────────
 
 function PlacementGrid({ placedShips, shipDefs, onPlace, onReset }) {
   const { t } = useLanguage();
   const [horizontal, setHorizontal] = useState(true);
-  const [hoverCells, setHoverCells] = useState([]);
-  const [hoverValid, setHoverValid] = useState(true);
-  const [currentIdx, setCurrentIdx] = useState(0);
+  const [hoverCell, setHoverCell] = useState(null);
+  const [isDragging, setIsDragging] = useState(false);
+  const horizontalRef = useRef(true);
+  const gridRef = useRef(null);
 
-  const placedCells = new Set(placedShips.flat());
+  const currentIdx = placedShips.length;
   const done = currentIdx >= shipDefs.length;
-  const current = shipDefs[currentIdx];
+  const current = done ? null : shipDefs[currentIdx];
+  const placedCells = new Set(placedShips.flat());
 
-  // Keyboard rotation
+  // Keep ref in sync for use inside pointer/touch handlers
+  useEffect(() => { horizontalRef.current = horizontal; }, [horizontal]);
+
+  // Keyboard R to rotate
   useEffect(() => {
-    const handler = (e) => {
-      if (e.key === "r" || e.key === "R") setHorizontal(h => !h);
-    };
+    const handler = (e) => { if (e.key === "r" || e.key === "R") { setHorizontal(h => !h); setHoverCell(null); } };
     window.addEventListener("keydown", handler);
     return () => window.removeEventListener("keydown", handler);
   }, []);
 
-  const computeHover = useCallback((index, horiz) => {
-    if (done) return;
-    const cells = getShipCells(index, current.size, horiz);
-    if (!cells) { setHoverCells([]); return; }
-    setHoverCells(cells);
-    setHoverValid(!hasOverlap(cells, placedShips));
-  }, [done, current, placedShips]);
-
-  const handleMouseEnter = (index) => computeHover(index, horizontal);
-
-  // Touch: tap to place, long-press to rotate
-  const touchTimer = useState(null);
-  const handleTouchStart = (index) => {
-    computeHover(index, horizontal);
-    touchTimer[1](setTimeout(() => {
-      setHorizontal(h => { computeHover(index, !h); return !h; });
-    }, 400));
-  };
-  const handleTouchEnd = (index) => {
-    if (touchTimer[0]) { clearTimeout(touchTimer[0]); touchTimer[1](null); }
-    handleClick(index);
+  const getPreview = (cellIdx, horiz) => {
+    if (done || cellIdx === null) return { cells: [], valid: false };
+    const cells = getShipCells(cellIdx, current.size, horiz);
+    if (!cells) return { cells: [], valid: false };
+    return { cells, valid: !hasOverlap(cells, placedShips) };
   };
 
-  const handleClick = (index) => {
-    if (done) return;
-    const cells = getShipCells(index, current.size, horizontal);
+  const { cells: previewCells, valid: previewValid } = getPreview(hoverCell, horizontal);
+
+  const tryPlace = (cellIdx) => {
+    if (done || cellIdx === null) return;
+    const cells = getShipCells(cellIdx, current.size, horizontalRef.current);
     if (!cells || hasOverlap(cells, placedShips)) return;
     onPlace(cells);
-    setCurrentIdx(i => i + 1);
-    setHoverCells([]);
+    setHoverCell(null);
   };
 
-  const handleReset = () => { setCurrentIdx(0); setHoverCells([]); onReset(); };
-
-  const toggleHoriz = () => {
-    const next = !horizontal;
-    setHorizontal(next);
-    setHoverCells([]);
+  // HTML5 drag: ship piece → grid
+  const handleDragOver = (e) => {
+    e.preventDefault();
+    const idx = Number(e.target.dataset.cellIdx);
+    if (!isNaN(idx)) setHoverCell(idx);
   };
+  const handleDragLeave = (e) => {
+    if (!e.currentTarget.contains(e.relatedTarget)) setHoverCell(null);
+  };
+  const handleDrop = (e) => {
+    e.preventDefault();
+    const idx = Number(e.target.dataset.cellIdx);
+    if (!isNaN(idx)) tryPlace(idx);
+    setIsDragging(false);
+    setHoverCell(null);
+  };
+
+  // Touch drag: finger moves over grid
+  const getCellFromPoint = (x, y) => {
+    const el = document.elementFromPoint(x, y);
+    if (!el) return null;
+    const idx = el.dataset.cellIdx ?? el.parentElement?.dataset.cellIdx;
+    return idx !== undefined ? Number(idx) : null;
+  };
+
+  const handleShipTouchMove = useCallback((e) => {
+    e.preventDefault();
+    const touch = e.touches[0];
+    const idx = getCellFromPoint(touch.clientX, touch.clientY);
+    setHoverCell(idx);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const handleShipTouchEnd = useCallback((e) => {
+    e.preventDefault();
+    const touch = e.changedTouches[0];
+    const idx = getCellFromPoint(touch.clientX, touch.clientY);
+    if (idx !== null) tryPlace(idx);
+    setIsDragging(false);
+    setHoverCell(null);
+  }, [placedShips, done, current]); // eslint-disable-line react-hooks/exhaustive-deps
 
   return (
     <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: "0.75rem" }}>
-      <div style={{ textAlign: "center" }}>
-        {!done ? (
-          <>
-            <p style={{ color: "#a78bfa", fontWeight: 700, marginBottom: "0.4rem" }}>
-              {t.placingShip} <span style={{ color: "white" }}>{current.name}</span> ({current.size} {t.fields})
-            </p>
-            <button className="rotate-btn" onClick={toggleHoriz}>
-              🔄 {horizontal ? t.horizontal : t.vertical} — {t.rotate}
-            </button>
-          </>
-        ) : (
-          <p style={{ color: "#34d399", fontWeight: 700, fontSize: "1.1rem" }}>✅ {t.allPlaced}</p>
-        )}
-      </div>
 
+      {/* Current ship + rotation */}
+      {!done ? (
+        <div style={{ textAlign: "center" }}>
+          <p style={{ color: "#a78bfa", fontWeight: 700, marginBottom: "0.5rem" }}>
+            {t.placingShip} <span style={{ color: "white" }}>{current.name}</span> ({current.size} {t.fields})
+          </p>
+          <div style={{ display: "flex", alignItems: "center", gap: "0.75rem", justifyContent: "center", marginBottom: "0.5rem" }}>
+            {/* Draggable ship piece */}
+            <div
+              className="ship-drag-piece"
+              style={{
+                display: "grid",
+                gridTemplateColumns: horizontal ? `repeat(${current.size}, var(--bs-cell, 2.2rem))` : "var(--bs-cell, 2.2rem)",
+                gridTemplateRows: horizontal ? "var(--bs-cell, 2.2rem)" : `repeat(${current.size}, var(--bs-cell, 2.2rem))`,
+                cursor: "grab",
+                touchAction: "none",
+              }}
+              draggable
+              onDragStart={(e) => { e.dataTransfer.setData("text/plain", "ship"); setIsDragging(true); }}
+              onDragEnd={() => { setIsDragging(false); setHoverCell(null); }}
+              onTouchStart={(e) => { e.preventDefault(); setIsDragging(true); }}
+              onTouchMove={handleShipTouchMove}
+              onTouchEnd={handleShipTouchEnd}
+            >
+              {Array.from({ length: current.size }, (_, i) => (
+                <div key={i} className="ship-drag-cell" />
+              ))}
+            </div>
+            <button className="rotate-btn" onClick={() => { setHorizontal(h => !h); setHoverCell(null); }}>
+              🔄 {horizontal ? t.horizontal : t.vertical}
+            </button>
+          </div>
+          <p style={{ fontSize: "0.78rem", color: "rgba(255,255,255,0.35)" }}>
+            {t.dragToPlace}
+          </p>
+        </div>
+      ) : (
+        <p style={{ color: "#34d399", fontWeight: 700, fontSize: "1.1rem" }}>✅ {t.allPlaced}</p>
+      )}
+
+      {/* Grid */}
       <div
+        ref={gridRef}
         className="bs-grid"
-        onMouseLeave={() => setHoverCells([])}
+        onDragOver={handleDragOver}
+        onDragLeave={handleDragLeave}
+        onDrop={handleDrop}
+        onMouseLeave={() => { if (!isDragging) setHoverCell(null); }}
         style={{ touchAction: "none" }}
       >
         {Array.from({ length: GRID * GRID }, (_, i) => {
           const isPlaced = placedCells.has(i);
-          const isHover = hoverCells.includes(i);
-          let extraClass = "bs-cell-empty";
-          if (isPlaced) extraClass = "bs-cell-placed";
-          if (isHover) extraClass = hoverValid ? "bs-cell-hover-valid" : "bs-cell-hover-invalid";
+          const isPreview = previewCells.includes(i);
+          let cls = "bs-cell-empty";
+          if (isPlaced) cls = "bs-cell-placed";
+          if (isPreview) cls = previewValid ? "bs-cell-hover-valid" : "bs-cell-hover-invalid";
           return (
             <div
               key={i}
-              className={`bs-cell ${extraClass}`}
-              onMouseEnter={() => handleMouseEnter(i)}
-              onClick={() => handleClick(i)}
-              onTouchStart={(e) => { e.preventDefault(); handleTouchStart(i); }}
-              onTouchEnd={(e) => { e.preventDefault(); handleTouchEnd(i); }}
-              style={{ cursor: done ? "default" : "pointer" }}
+              data-cell-idx={i}
+              className={`bs-cell ${cls}`}
+              onMouseEnter={() => !isDragging && !done && setHoverCell(i)}
+              onClick={() => !isDragging && tryPlace(i)}
+              style={{ cursor: done ? "default" : "crosshair" }}
             />
           );
         })}
       </div>
 
+      {/* Ship checklist */}
       <div className="ship-list">
         {shipDefs.map((s, idx) => (
           <span key={idx} className={`ship-tag ${idx < currentIdx ? "ship-done" : idx === currentIdx ? "ship-active" : "ship-pending"}`}>
-            {s.name} ({s.size})
+            {idx < currentIdx ? "✓" : ""} {s.name} ({s.size})
           </span>
         ))}
       </div>
 
-      <button className="btn-secondary" onClick={handleReset} style={{ fontSize: "0.85rem" }}>
+      <button className="btn-secondary" onClick={() => { onReset(); setHoverCell(null); }} style={{ fontSize: "0.85rem" }}>
         🔄 {t.resetPlacement}
       </button>
     </div>
@@ -525,7 +577,7 @@ function Battleship() {
         <span className="player-o">🔴 {nameO}</span>
       </div>
 
-      <div style={{ display: "flex", justifyContent: "center", gap: "1.5rem", flexWrap: "wrap", marginTop: "0.75rem" }}>
+      <div className="bs-grids-row" style={{ display: "flex", justifyContent: "center", gap: "1.5rem", flexWrap: "wrap", marginTop: "0.75rem" }}>
         <div>
           <p style={{ fontSize: "0.85rem", color: "rgba(255,255,255,0.45)", marginBottom: "0.3rem" }}>{t.yourFleet}</p>
           <div className="bs-grid">

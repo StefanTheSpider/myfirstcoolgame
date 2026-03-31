@@ -514,6 +514,26 @@ button:disabled { opacity: 0.35; cursor: default; transform: none; }
 }
 .rotate-btn:hover { background: rgba(124,58,237,0.5); color: white; }
 
+/* Drag & drop ship piece */
+.ship-drag-piece {
+  cursor: grab;
+  user-select: none;
+  gap: 2px;
+  padding: 3px;
+  border-radius: 6px;
+  background: rgba(124,58,237,0.15);
+  border: 2px solid rgba(124,58,237,0.5);
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+.ship-drag-piece:active { cursor: grabbing; box-shadow: 0 4px 20px rgba(124,58,237,0.5); }
+.ship-drag-cell {
+  width: var(--bs-cell, 2.2rem);
+  height: var(--bs-cell, 2.2rem);
+  background: linear-gradient(135deg, #7c3aed, #4f46e5);
+  border-radius: 3px;
+  border: 1px solid rgba(255,255,255,0.2);
+}
+
 /* ── Rock Paper Scissors ──────────────────────────────── */
 .rps-choices {
   display: flex;
@@ -732,11 +752,21 @@ button:disabled { opacity: 0.35; cursor: default; transform: none; }
 
 /* ── Responsive ───────────────────────────────────────── */
 @media (max-width: 620px) {
-  :root { --c4-cell: 2.3rem; --c4-gap: 3px; --bs-cell: 1.6rem; }
+  :root {
+    --c4-cell: 2.3rem;
+    --c4-gap: 3px;
+    --bs-cell: calc((100vw - 3rem) / 10);
+  }
   .c4-arrow-btn { height: 1.7rem; font-size: 0.85rem; }
+  /* Battleship: stack grids vertically on mobile */
+  .bs-grids-row { flex-direction: column !important; align-items: center; gap: 1rem !important; }
 }
 @media (max-width: 420px) {
-  :root { --c4-cell: 1.85rem; --c4-gap: 2px; --bs-cell: 1.25rem; }
+  :root {
+    --c4-cell: 1.85rem;
+    --c4-gap: 2px;
+    --bs-cell: calc((100vw - 2.5rem) / 10);
+  }
   .c4-arrow-btn { height: 1.5rem; font-size: 0.75rem; }
   .bs-cell { border-width: 0.5px; }
   .rps-btn { width: min(95px, 28vw); font-size: 2.2rem; padding: 0.7rem 0.4rem; }
