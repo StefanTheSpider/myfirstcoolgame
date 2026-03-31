@@ -1,7 +1,15 @@
-import { useEffect, useState, useCallback, useRef } from "react";
+import { useEffect, useState, useRef } from "react";
 import { useSearchParams, useNavigate } from "react-router-dom";
 import { db } from "./firebaseClient";
-import { ref, set, update, get, onValue, push, onDisconnect } from "firebase/database";
+import {
+  ref,
+  set,
+  update,
+  get,
+  onValue,
+  push,
+  onDisconnect,
+} from "firebase/database";
 import { v4 as uuidv4 } from "uuid";
 import { useLanguage } from "./LanguageContext";
 import RulesModal from "./RulesModal";
@@ -40,8 +48,15 @@ function hasOverlap(cells, placedShips) {
 function placeShipsRandomly() {
   const occupied = new Set();
   const ships = [];
-  for (const { size } of [{ size: 5 }, { size: 4 }, { size: 3 }, { size: 3 }, { size: 2 }]) {
-    let placed = false, attempts = 0;
+  for (const { size } of [
+    { size: 5 },
+    { size: 4 },
+    { size: 3 },
+    { size: 3 },
+    { size: 2 },
+  ]) {
+    let placed = false,
+      attempts = 0;
     while (!placed && attempts < 1000) {
       attempts++;
       const horiz = Math.random() > 0.5;
@@ -50,8 +65,10 @@ function placeShipsRandomly() {
       const cells = [];
       for (let i = 0; i < size; i++)
         cells.push(horiz ? row * GRID + col + i : (row + i) * GRID + col);
-      if (cells.every(c => !occupied.has(c))) {
-        cells.forEach(c => occupied.add(c)); ships.push(cells); placed = true;
+      if (cells.every((c) => !occupied.has(c))) {
+        cells.forEach((c) => occupied.add(c));
+        ships.push(cells);
+        placed = true;
       }
     }
   }
@@ -60,15 +77,18 @@ function placeShipsRandomly() {
 
 function getAiShot(shots, enemyShips) {
   const allShipCells = enemyShips.flat();
-  const hits = shots.filter(s => allShipCells.includes(s));
-  const remaining = Array.from({ length: GRID * GRID }, (_, i) => i).filter(i => !shots.includes(i));
-  const unsunkHits = hits.filter(h => {
-    const ship = enemyShips.find(s => s.includes(h));
-    return ship && !ship.every(c => shots.includes(c));
+  const hits = shots.filter((s) => allShipCells.includes(s));
+  const remaining = Array.from({ length: GRID * GRID }, (_, i) => i).filter(
+    (i) => !shots.includes(i),
+  );
+  const unsunkHits = hits.filter((h) => {
+    const ship = enemyShips.find((s) => s.includes(h));
+    return ship && !ship.every((c) => shots.includes(c));
   });
   if (unsunkHits.length > 0) {
     const lastHit = unsunkHits[unsunkHits.length - 1];
-    const row = Math.floor(lastHit / GRID), col = lastHit % GRID;
+    const row = Math.floor(lastHit / GRID),
+      col = lastHit % GRID;
     let candidates = [];
     if (unsunkHits.length > 1) {
       const prev = unsunkHits[unsunkHits.length - 2];
@@ -76,18 +96,41 @@ function getAiShot(shots, enemyShips) {
       const dc = (lastHit % GRID) - (prev % GRID);
       const next = lastHit + dr * GRID + dc;
       const back = unsunkHits[0] - dr * GRID - dc;
-      if (next >= 0 && next < GRID * GRID && Math.floor(next / GRID) === row + dr && (next % GRID) === col + dc && !shots.includes(next)) candidates.push(next);
-      if (back >= 0 && back < GRID * GRID && !shots.includes(back)) candidates.push(back);
+      if (
+        next >= 0 &&
+        next < GRID * GRID &&
+        Math.floor(next / GRID) === row + dr &&
+        next % GRID === col + dc &&
+        !shots.includes(next)
+      )
+        candidates.push(next);
+      if (back >= 0 && back < GRID * GRID && !shots.includes(back))
+        candidates.push(back);
     }
     if (candidates.length === 0) {
-      candidates = [lastHit - 1, lastHit + 1, lastHit - GRID, lastHit + GRID].filter(n =>
-        n >= 0 && n < GRID * GRID && !shots.includes(n) &&
-        (n === lastHit - 1 ? col > 0 : n === lastHit + 1 ? col < GRID - 1 : true)
+      candidates = [
+        lastHit - 1,
+        lastHit + 1,
+        lastHit - GRID,
+        lastHit + GRID,
+      ].filter(
+        (n) =>
+          n >= 0 &&
+          n < GRID * GRID &&
+          !shots.includes(n) &&
+          (n === lastHit - 1
+            ? col > 0
+            : n === lastHit + 1
+              ? col < GRID - 1
+              : true),
       );
     }
-    if (candidates.length > 0) return candidates[Math.floor(Math.random() * candidates.length)];
+    if (candidates.length > 0)
+      return candidates[Math.floor(Math.random() * candidates.length)];
   }
-  const checker = remaining.filter(i => (Math.floor(i / GRID) + i % GRID) % 2 === 0);
+  const checker = remaining.filter(
+    (i) => (Math.floor(i / GRID) + (i % GRID)) % 2 === 0,
+  );
   const pool = checker.length > 0 ? checker : remaining;
   return pool[Math.floor(Math.random() * pool.length)];
 }
@@ -100,144 +143,124 @@ function normalizeShots(raw) {
 function normalizeShips(raw) {
   if (!raw) return [];
   if (Array.isArray(raw)) return raw;
-  return Object.values(raw).map(ship => Array.isArray(ship) ? ship : Object.values(ship).map(Number));
+  return Object.values(raw).map((ship) =>
+    Array.isArray(ship) ? ship : Object.values(ship).map(Number),
+  );
 }
 
-// ── Placement Grid (Drag & Drop) ───────────────────────────────────────────
+// ── Placement Grid (Drag directly on grid) ────────────────────────────────
 
 function PlacementGrid({ placedShips, shipDefs, onPlace, onReset }) {
   const { t } = useLanguage();
   const [horizontal, setHorizontal] = useState(true);
-  const [hoverCell, setHoverCell] = useState(null);
-  const [isDragging, setIsDragging] = useState(false);
+  const [previewStart, setPreviewStart] = useState(null); // cell index where drag/hover starts
+  const [dragOrigin, setDragOrigin] = useState(null);     // pointerdown origin cell
   const horizontalRef = useRef(true);
-  const gridRef = useRef(null);
 
   const currentIdx = placedShips.length;
   const done = currentIdx >= shipDefs.length;
   const current = done ? null : shipDefs[currentIdx];
   const placedCells = new Set(placedShips.flat());
 
-  // Keep ref in sync for use inside pointer/touch handlers
   useEffect(() => { horizontalRef.current = horizontal; }, [horizontal]);
 
   // Keyboard R to rotate
   useEffect(() => {
-    const handler = (e) => { if (e.key === "r" || e.key === "R") { setHorizontal(h => !h); setHoverCell(null); } };
+    const handler = (e) => {
+      if (e.key === "r" || e.key === "R") {
+        setHorizontal((h) => !h);
+        setPreviewStart(null);
+      }
+    };
     window.addEventListener("keydown", handler);
     return () => window.removeEventListener("keydown", handler);
   }, []);
 
-  const getPreview = (cellIdx, horiz) => {
-    if (done || cellIdx === null) return { cells: [], valid: false };
-    const cells = getShipCells(cellIdx, current.size, horiz);
+  const getPreview = (startIdx, horiz) => {
+    if (done || startIdx === null) return { cells: [], valid: false };
+    const cells = getShipCells(startIdx, current.size, horiz);
     if (!cells) return { cells: [], valid: false };
     return { cells, valid: !hasOverlap(cells, placedShips) };
   };
 
-  const { cells: previewCells, valid: previewValid } = getPreview(hoverCell, horizontal);
+  const { cells: previewCells, valid: previewValid } = getPreview(previewStart, horizontal);
 
   const tryPlace = (cellIdx) => {
     if (done || cellIdx === null) return;
     const cells = getShipCells(cellIdx, current.size, horizontalRef.current);
     if (!cells || hasOverlap(cells, placedShips)) return;
     onPlace(cells);
-    setHoverCell(null);
+    setPreviewStart(null);
+    setDragOrigin(null);
   };
 
-  // HTML5 drag: ship piece → grid
-  const handleDragOver = (e) => {
-    e.preventDefault();
-    const idx = Number(e.target.dataset.cellIdx);
-    if (!isNaN(idx)) setHoverCell(idx);
-  };
-  const handleDragLeave = (e) => {
-    if (!e.currentTarget.contains(e.relatedTarget)) setHoverCell(null);
-  };
-  const handleDrop = (e) => {
-    e.preventDefault();
-    const idx = Number(e.target.dataset.cellIdx);
-    if (!isNaN(idx)) tryPlace(idx);
-    setIsDragging(false);
-    setHoverCell(null);
-  };
-
-  // Touch drag: finger moves over grid
-  const getCellFromPoint = (x, y) => {
+  // Helper: get cell index from a pointer/touch point
+  const getCellAt = (x, y) => {
     const el = document.elementFromPoint(x, y);
     if (!el) return null;
-    const idx = el.dataset.cellIdx ?? el.parentElement?.dataset.cellIdx;
-    return idx !== undefined ? Number(idx) : null;
+    const raw = el.dataset.cellIdx ?? el.parentElement?.dataset.cellIdx;
+    if (raw === undefined) return null;
+    const n = Number(raw);
+    return isNaN(n) ? null : n;
   };
 
-  const handleShipTouchMove = useCallback((e) => {
-    e.preventDefault();
-    const touch = e.touches[0];
-    const idx = getCellFromPoint(touch.clientX, touch.clientY);
-    setHoverCell(idx);
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  // Pointer events on the grid: drag across cells to preview, release to place
+  const handlePointerDown = (e, cellIdx) => {
+    if (done) return;
+    e.currentTarget.setPointerCapture(e.pointerId);
+    setDragOrigin(cellIdx);
+    setPreviewStart(cellIdx);
+  };
 
-  const handleShipTouchEnd = useCallback((e) => {
-    e.preventDefault();
-    const touch = e.changedTouches[0];
-    const idx = getCellFromPoint(touch.clientX, touch.clientY);
-    if (idx !== null) tryPlace(idx);
-    setIsDragging(false);
-    setHoverCell(null);
-  }, [placedShips, done, current]); // eslint-disable-line react-hooks/exhaustive-deps
+  const handlePointerMove = (e) => {
+    if (done || dragOrigin === null) {
+      // hover without drag: just update preview on the cell under pointer
+      const idx = getCellAt(e.clientX, e.clientY);
+      if (idx !== null) setPreviewStart(idx);
+      return;
+    }
+    // During drag: determine orientation from movement direction
+    const idx = getCellAt(e.clientX, e.clientY);
+    if (idx === null) return;
+    const dragRow = Math.floor(dragOrigin / GRID);
+    const dragCol = dragOrigin % GRID;
+    const curRow = Math.floor(idx / GRID);
+    const curCol = idx % GRID;
+    const dRow = Math.abs(curRow - dragRow);
+    const dCol = Math.abs(curCol - dragCol);
+    if (dRow > 0 || dCol > 0) {
+      const newHoriz = dCol >= dRow;
+      if (newHoriz !== horizontalRef.current) {
+        setHorizontal(newHoriz);
+        horizontalRef.current = newHoriz;
+      }
+    }
+    // Anchor preview at drag origin
+    setPreviewStart(dragOrigin);
+  };
+
+  const handlePointerUp = () => {
+    if (done) return;
+    if (dragOrigin !== null) {
+      tryPlace(dragOrigin);
+    }
+    setDragOrigin(null);
+  };
+
+  const handlePointerLeave = () => {
+    if (dragOrigin === null) setPreviewStart(null);
+  };
 
   return (
     <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: "0.75rem" }}>
 
-      {/* Current ship + rotation */}
-      {!done ? (
-        <div style={{ textAlign: "center" }}>
-          <p style={{ color: "#a78bfa", fontWeight: 700, marginBottom: "0.5rem" }}>
-            {t.placingShip} <span style={{ color: "white" }}>{current.name}</span> ({current.size} {t.fields})
-          </p>
-          <div style={{ display: "flex", alignItems: "center", gap: "0.75rem", justifyContent: "center", marginBottom: "0.5rem" }}>
-            {/* Draggable ship piece */}
-            <div
-              className="ship-drag-piece"
-              style={{
-                display: "grid",
-                gridTemplateColumns: horizontal ? `repeat(${current.size}, var(--bs-cell, 2.2rem))` : "var(--bs-cell, 2.2rem)",
-                gridTemplateRows: horizontal ? "var(--bs-cell, 2.2rem)" : `repeat(${current.size}, var(--bs-cell, 2.2rem))`,
-                cursor: "grab",
-                touchAction: "none",
-              }}
-              draggable
-              onDragStart={(e) => { e.dataTransfer.setData("text/plain", "ship"); setIsDragging(true); }}
-              onDragEnd={() => { setIsDragging(false); setHoverCell(null); }}
-              onTouchStart={(e) => { e.preventDefault(); setIsDragging(true); }}
-              onTouchMove={handleShipTouchMove}
-              onTouchEnd={handleShipTouchEnd}
-            >
-              {Array.from({ length: current.size }, (_, i) => (
-                <div key={i} className="ship-drag-cell" />
-              ))}
-            </div>
-            <button className="rotate-btn" onClick={() => { setHorizontal(h => !h); setHoverCell(null); }}>
-              🔄 {horizontal ? t.horizontal : t.vertical}
-            </button>
-          </div>
-          <p style={{ fontSize: "0.78rem", color: "rgba(255,255,255,0.35)" }}>
-            {t.dragToPlace}
-          </p>
-        </div>
-      ) : (
-        <p style={{ color: "#34d399", fontWeight: 700, fontSize: "1.1rem" }}>✅ {t.allPlaced}</p>
-      )}
-
-      {/* Grid */}
+      {/* Grid — drag directly on it */}
       <div
-        ref={gridRef}
         className="bs-grid"
-        onDragOver={handleDragOver}
-        onDragLeave={handleDragLeave}
-        onDrop={handleDrop}
-        onMouseLeave={() => { if (!isDragging) setHoverCell(null); }}
-        style={{ touchAction: "none" }}
+        style={{ touchAction: "none", cursor: done ? "default" : "crosshair" }}
+        onPointerMove={handlePointerMove}
+        onPointerUp={handlePointerUp}
+        onPointerLeave={handlePointerLeave}
       >
         {Array.from({ length: GRID * GRID }, (_, i) => {
           const isPlaced = placedCells.has(i);
@@ -250,13 +273,28 @@ function PlacementGrid({ placedShips, shipDefs, onPlace, onReset }) {
               key={i}
               data-cell-idx={i}
               className={`bs-cell ${cls}`}
-              onMouseEnter={() => !isDragging && !done && setHoverCell(i)}
-              onClick={() => !isDragging && tryPlace(i)}
-              style={{ cursor: done ? "default" : "crosshair" }}
+              onPointerDown={(e) => handlePointerDown(e, i)}
             />
           );
         })}
       </div>
+
+      {/* Controls below the grid */}
+      {!done ? (
+        <div style={{ textAlign: "center" }}>
+          <p style={{ color: "#a78bfa", fontWeight: 700, marginBottom: "0.5rem" }}>
+            {t.placingShip} <span style={{ color: "white" }}>{current.name}</span> ({current.size} {t.fields})
+          </p>
+          <button className="rotate-btn" onClick={() => { setHorizontal((h) => !h); setPreviewStart(null); }}>
+            🔄 {horizontal ? t.horizontal : t.vertical} — {t.rotate}
+          </button>
+          <p style={{ fontSize: "0.78rem", color: "rgba(255,255,255,0.35)", marginTop: "0.4rem" }}>
+            {t.dragToPlace}
+          </p>
+        </div>
+      ) : (
+        <p style={{ color: "#34d399", fontWeight: 700, fontSize: "1.1rem" }}>✅ {t.allPlaced}</p>
+      )}
 
       {/* Ship checklist */}
       <div className="ship-list">
@@ -267,7 +305,7 @@ function PlacementGrid({ placedShips, shipDefs, onPlace, onReset }) {
         ))}
       </div>
 
-      <button className="btn-secondary" onClick={() => { onReset(); setHoverCell(null); }} style={{ fontSize: "0.85rem" }}>
+      <button className="btn-secondary" onClick={() => { onReset(); setPreviewStart(null); setDragOrigin(null); }} style={{ fontSize: "0.85rem" }}>
         🔄 {t.resetPlacement}
       </button>
     </div>
@@ -298,7 +336,10 @@ function Battleship() {
 
   const [playerId] = useState(() => {
     let s = localStorage.getItem("playerId");
-    if (!s) { s = uuidv4(); localStorage.setItem("playerId", s); }
+    if (!s) {
+      s = uuidv4();
+      localStorage.setItem("playerId", s);
+    }
     return s;
   });
 
@@ -308,16 +349,24 @@ function Battleship() {
 
   const initComputerGame = (myShips) => ({
     id: "local",
-    player_x: playerId, player_x_name: playerName,
-    player_x_ships: myShips, player_x_shots: [],
-    player_o: "computer", player_o_name: t.computer,
-    player_o_ships: placeShipsRandomly(), player_o_shots: [],
-    turn: "X", winner: null,
+    player_x: playerId,
+    player_x_name: playerName,
+    player_x_ships: myShips,
+    player_x_shots: [],
+    player_o: "computer",
+    player_o_name: t.computer,
+    player_o_ships: placeShipsRandomly(),
+    player_o_shots: [],
+    turn: "X",
+    winner: null,
   });
 
   useEffect(() => {
     if (!isComputer) return;
-    setPlayerSymbol("X"); setPhase("place"); setPlacedShips([]); setGame(null);
+    setPlayerSymbol("X");
+    setPhase("place");
+    setPlacedShips([]);
+    setGame(null);
   }, [isComputer]);
 
   const doAiShot = (currentGame) => {
@@ -326,9 +375,10 @@ function Battleship() {
       const myShips = normalizeShips(currentGame.player_x_ships);
       const shot = getAiShot(shots, myShips);
       const newShots = [...shots, shot];
-      const allSunk = myShips.flat().every(c => newShots.includes(c));
-      setGame(prev => ({
-        ...prev, player_o_shots: newShots,
+      const allSunk = myShips.flat().every((c) => newShots.includes(c));
+      setGame((prev) => ({
+        ...prev,
+        player_o_shots: newShots,
         turn: allSunk ? null : "X",
         winner: allSunk ? "O" : null,
       }));
@@ -341,8 +391,13 @@ function Battleship() {
     if (shots.includes(index)) return;
     const opShips = normalizeShips(game.player_o_ships);
     const newShots = [...shots, index];
-    const allSunk = opShips.flat().every(c => newShots.includes(c));
-    const newGame = { ...game, player_x_shots: newShots, turn: allSunk ? null : "O", winner: allSunk ? "X" : null };
+    const allSunk = opShips.flat().every((c) => newShots.includes(c));
+    const newGame = {
+      ...game,
+      player_x_shots: newShots,
+      turn: allSunk ? null : "O",
+      winner: allSunk ? "X" : null,
+    };
     setGame(newGame);
     if (!allSunk) doAiShot(newGame);
   };
@@ -353,18 +408,28 @@ function Battleship() {
     const gRef = ref(db, "battleship");
     const newRef = push(gRef);
     await set(newRef, {
-      player_x: playerId, player_x_name: playerName,
-      player_x_ships: null, player_x_shots: [],
-      player_o: null, player_o_name: null,
-      player_o_ships: null, player_o_shots: [],
-      turn: "X", winner: null,
+      player_x: playerId,
+      player_x_name: playerName,
+      player_x_ships: null,
+      player_x_shots: [],
+      player_o: null,
+      player_o_name: null,
+      player_o_ships: null,
+      player_o_shots: [],
+      turn: "X",
+      winner: null,
     });
     onDisconnect(newRef).remove();
     return newRef.key;
   };
 
   const handleStart = async () => {
-    if (isComputer) { setPlacedShips([]); setGame(null); setPhase("place"); return; }
+    if (isComputer) {
+      setPlacedShips([]);
+      setGame(null);
+      setPhase("place");
+      return;
+    }
     const id = await createOnlineGame();
     navigate(`/battleship?gameId=${id}&mode=online`);
   };
@@ -374,13 +439,20 @@ function Battleship() {
     const gameRef = ref(db, `battleship/${gameIdFromUrl}`);
     const init = async () => {
       const snap = await get(gameRef);
-      if (!snap.exists()) { navigate("/"); return; }
+      if (!snap.exists()) {
+        navigate("/");
+        return;
+      }
       const data = snap.val();
       setGame({ ...data, id: gameIdFromUrl });
       if (data.player_x === playerId) {
-        setPlayerSymbol("X"); onDisconnect(gameRef).remove();
+        setPlayerSymbol("X");
+        onDisconnect(gameRef).remove();
       } else if (!data.player_o) {
-        await update(gameRef, { player_o: playerId, player_o_name: playerName });
+        await update(gameRef, {
+          player_o: playerId,
+          player_o_name: playerName,
+        });
         setPlayerSymbol("O");
         onDisconnect(ref(db, `battleship/${gameIdFromUrl}/player_o`)).set(null);
       } else if (data.player_o === playerId) {
@@ -402,7 +474,10 @@ function Battleship() {
   }, [gameIdFromUrl, isComputer]);
 
   useEffect(() => {
-    if (!game?.winner) { setShowOverlay(false); return; }
+    if (!game?.winner) {
+      setShowOverlay(false);
+      return;
+    }
     const timer = setTimeout(() => setShowOverlay(true), 600);
     return () => clearTimeout(timer);
   }, [game?.winner]);
@@ -410,7 +485,10 @@ function Battleship() {
   useEffect(() => {
     if (!game?.turn || game?.winner) return;
     if (prevTurnRef.current !== null && prevTurnRef.current !== game.turn) {
-      const name = game.turn === "X" ? (game.player_x_name || "Player X") : (game.player_o_name || "Player O");
+      const name =
+        game.turn === "X"
+          ? game.player_x_name || "Player X"
+          : game.player_o_name || "Player O";
       turnBannerTextRef.current = `${name} ${t.nowShooting}`;
       setShowTurnBanner(true);
       const timer = setTimeout(() => setShowTurnBanner(false), 2000);
@@ -418,7 +496,7 @@ function Battleship() {
       return () => clearTimeout(timer);
     }
     prevTurnRef.current = game.turn;
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [game?.turn, game?.winner]);
 
   const handleConfirmPlacement = async () => {
@@ -435,19 +513,33 @@ function Battleship() {
   };
 
   const handleOnlineShot = async (index) => {
-    if (!game || game.winner || game.turn !== playerSymbol || playerSymbol === "Spectator") return;
+    if (
+      !game ||
+      game.winner ||
+      game.turn !== playerSymbol ||
+      playerSymbol === "Spectator"
+    )
+      return;
     const gameRef = ref(db, `battleship/${game.id}`);
     const snap = await get(gameRef);
     const fd = snap.val();
     if (fd.turn !== playerSymbol || fd.winner) return;
-    const myShots = normalizeShots(playerSymbol === "X" ? fd.player_x_shots : fd.player_o_shots);
+    const myShots = normalizeShots(
+      playerSymbol === "X" ? fd.player_x_shots : fd.player_o_shots,
+    );
     if (myShots.includes(index)) return;
-    const opShips = normalizeShips(playerSymbol === "X" ? fd.player_o_ships : fd.player_x_ships);
+    const opShips = normalizeShips(
+      playerSymbol === "X" ? fd.player_o_ships : fd.player_x_ships,
+    );
     const newShots = [...myShots, index];
-    const allSunk = opShips.flat().every(c => newShots.includes(c));
+    const allSunk = opShips.flat().every((c) => newShots.includes(c));
     const updates = { turn: playerSymbol === "X" ? "O" : "X" };
-    if (playerSymbol === "X") updates.player_x_shots = newShots; else updates.player_o_shots = newShots;
-    if (allSunk) { updates.winner = playerSymbol; updates.turn = null; }
+    if (playerSymbol === "X") updates.player_x_shots = newShots;
+    else updates.player_o_shots = newShots;
+    if (allSunk) {
+      updates.winner = playerSymbol;
+      updates.turn = null;
+    }
     await update(gameRef, updates);
   };
 
@@ -464,60 +556,116 @@ function Battleship() {
   const nameO = game?.player_o_name || (isComputer ? t.computer : "Player O");
   const inviteLink = `${window.location.origin}/battleship?gameId=${game?.id}&mode=online`;
 
-  const myShips = normalizeShips(effectiveSym === "X" ? game?.player_x_ships : game?.player_o_ships);
-  const opponentShips = normalizeShips(effectiveSym === "X" ? game?.player_o_ships : game?.player_x_ships);
-  const myShots = normalizeShots(effectiveSym === "X" ? game?.player_x_shots : game?.player_o_shots);
-  const opponentShots = normalizeShots(effectiveSym === "X" ? game?.player_o_shots : game?.player_x_shots);
+  const myShips = normalizeShips(
+    effectiveSym === "X" ? game?.player_x_ships : game?.player_o_ships,
+  );
+  const opponentShips = normalizeShips(
+    effectiveSym === "X" ? game?.player_o_ships : game?.player_x_ships,
+  );
+  const myShots = normalizeShots(
+    effectiveSym === "X" ? game?.player_x_shots : game?.player_o_shots,
+  );
+  const opponentShots = normalizeShots(
+    effectiveSym === "X" ? game?.player_o_shots : game?.player_x_shots,
+  );
 
   const myShipCells = new Set(myShips.flat());
   const opponentShipCells = new Set(opponentShips.flat());
-  const incomingHits = new Set(opponentShots.filter(s => myShipCells.has(s)));
-  const incomingMisses = new Set(opponentShots.filter(s => !myShipCells.has(s)));
-  const shotHits = new Set(myShots.filter(s => opponentShipCells.has(s)));
-  const shotMisses = new Set(myShots.filter(s => !opponentShipCells.has(s)));
+  const incomingHits = new Set(opponentShots.filter((s) => myShipCells.has(s)));
+  const incomingMisses = new Set(
+    opponentShots.filter((s) => !myShipCells.has(s)),
+  );
+  const shotHits = new Set(myShots.filter((s) => opponentShipCells.has(s)));
+  const shotMisses = new Set(myShots.filter((s) => !opponentShipCells.has(s)));
 
-  const iHavePlaced = isComputer ? phase === "play" : myShips.length === SHIPS.length;
-  const opponentHasPlaced = isComputer ? true : opponentShips.length === SHIPS.length;
+  const iHavePlaced = isComputer
+    ? phase === "play"
+    : myShips.length === SHIPS.length;
+  const opponentHasPlaced = isComputer
+    ? true
+    : opponentShips.length === SHIPS.length;
   const bothPlaced = iHavePlaced && opponentHasPlaced;
 
   const topBar = (
-    <div style={{ display: "flex", justifyContent: "flex-end", width: "100%", maxWidth: "700px", padding: "0.5rem 1rem 0" }}>
-      <button className="btn-icon" onClick={() => setShowRules(true)}>📖 {t.rules}</button>
+    <div
+      style={{
+        display: "flex",
+        justifyContent: "flex-end",
+        width: "100%",
+        maxWidth: "700px",
+        padding: "0.5rem 1rem 0",
+      }}
+    >
+      <button className="btn-icon" onClick={() => setShowRules(true)}>
+        📖 {t.rules}
+      </button>
     </div>
   );
 
   // No game / create
   if (!gameIdFromUrl && !isComputer) {
     return (
-      <div className="fade-in" style={{ textAlign: "center", padding: "2rem 1rem" }}>
+      <div
+        className="fade-in"
+        style={{ textAlign: "center", padding: "2rem 1rem" }}
+      >
         {topBar}
         <h1 className="game-title">🚢 {t.battleship}</h1>
-        <p style={{ color: "rgba(255,255,255,0.5)", marginBottom: "1.5rem" }}>{playerName}</p>
-        <button className="btn-primary" onClick={handleStart}>{t.createGame}</button>
-        {showRules && <RulesModal gameKey="battleship" onClose={() => setShowRules(false)} />}
+        <p style={{ color: "rgba(255,255,255,0.5)", marginBottom: "1.5rem" }}>
+          {playerName}
+        </p>
+        <button className="btn-primary" onClick={handleStart}>
+          {t.createGame}
+        </button>
+        {showRules && (
+          <RulesModal
+            gameKey="battleship"
+            onClose={() => setShowRules(false)}
+          />
+        )}
       </div>
     );
   }
 
   // Placement phase
-  if ((isComputer && phase === "place") || (!isComputer && game && !iHavePlaced && effectiveSym !== "Spectator")) {
+  if (
+    (isComputer && phase === "place") ||
+    (!isComputer && game && !iHavePlaced && effectiveSym !== "Spectator")
+  ) {
     return (
       <div className="fade-in" style={{ textAlign: "center", padding: "1rem" }}>
         {topBar}
         <h1 className="game-title">🚢 {t.battleship}</h1>
-        <h2 style={{ color: "rgba(255,255,255,0.6)", fontSize: "1.1rem", marginBottom: "1rem" }}>{t.placeFleet}</h2>
+        <h2
+          style={{
+            color: "rgba(255,255,255,0.6)",
+            fontSize: "1.1rem",
+            marginBottom: "1rem",
+          }}
+        >
+          {t.placeFleet}
+        </h2>
         <PlacementGrid
           placedShips={placedShips}
           shipDefs={SHIPS}
-          onPlace={(cells) => setPlacedShips(prev => [...prev, cells])}
+          onPlace={(cells) => setPlacedShips((prev) => [...prev, cells])}
           onReset={() => setPlacedShips([])}
         />
         {placedShips.length === SHIPS.length && (
-          <button className="btn-success" onClick={handleConfirmPlacement} style={{ marginTop: "1rem" }}>
+          <button
+            className="btn-success"
+            onClick={handleConfirmPlacement}
+            style={{ marginTop: "1rem" }}
+          >
             ✅ {t.confirmFleet}
           </button>
         )}
-        {showRules && <RulesModal gameKey="battleship" onClose={() => setShowRules(false)} />}
+        {showRules && (
+          <RulesModal
+            gameKey="battleship"
+            onClose={() => setShowRules(false)}
+          />
+        )}
       </div>
     );
   }
@@ -525,18 +673,38 @@ function Battleship() {
   // Waiting for opponent
   if (!isComputer && effectiveSym === "X" && game && !game.player_o) {
     return (
-      <div className="fade-in" style={{ textAlign: "center", padding: "2rem 1rem" }}>
+      <div
+        className="fade-in"
+        style={{ textAlign: "center", padding: "2rem 1rem" }}
+      >
         {topBar}
         <h1 className="game-title">🚢 {t.battleship}</h1>
         <div className="invite-box">
           <p>{t.inviteFriend}</p>
           <div className="invite-row">
-            <input readOnly value={inviteLink} className="invite-input" onClick={(e) => e.target.select()} />
-            <button className="btn-primary" onClick={() => copyLink(inviteLink)}>{copied ? "✅" : t.copyLink}</button>
+            <input
+              readOnly
+              value={inviteLink}
+              className="invite-input"
+              onClick={(e) => e.target.select()}
+            />
+            <button
+              className="btn-primary"
+              onClick={() => copyLink(inviteLink)}
+            >
+              {copied ? "✅" : t.copyLink}
+            </button>
           </div>
         </div>
-        <p style={{ color: "rgba(255,255,255,0.4)", marginTop: "1rem" }}>{t.waitingOpponent}</p>
-        {showRules && <RulesModal gameKey="battleship" onClose={() => setShowRules(false)} />}
+        <p style={{ color: "rgba(255,255,255,0.4)", marginTop: "1rem" }}>
+          {t.waitingOpponent}
+        </p>
+        {showRules && (
+          <RulesModal
+            gameKey="battleship"
+            onClose={() => setShowRules(false)}
+          />
+        )}
       </div>
     );
   }
@@ -544,29 +712,64 @@ function Battleship() {
   // Waiting for both to place
   if (!isComputer && !bothPlaced && effectiveSym !== "Spectator") {
     return (
-      <div className="fade-in" style={{ textAlign: "center", padding: "2rem 1rem" }}>
+      <div
+        className="fade-in"
+        style={{ textAlign: "center", padding: "2rem 1rem" }}
+      >
         {topBar}
         <h1 className="game-title">🚢 {t.battleship}</h1>
-        <div className="status-badge status-wait" style={{ marginTop: "1rem" }}>⏳ {t.waitingEnemy}</div>
-        {showRules && <RulesModal gameKey="battleship" onClose={() => setShowRules(false)} />}
+        <div className="status-badge status-wait" style={{ marginTop: "1rem" }}>
+          ⏳ {t.waitingEnemy}
+        </div>
+        {showRules && (
+          <RulesModal
+            gameKey="battleship"
+            onClose={() => setShowRules(false)}
+          />
+        )}
       </div>
     );
   }
 
-  if (!game) return <div style={{ textAlign: "center", marginTop: "4rem", color: "rgba(255,255,255,0.5)" }}>{t.loading}</div>;
+  if (!game)
+    return (
+      <div
+        style={{
+          textAlign: "center",
+          marginTop: "4rem",
+          color: "rgba(255,255,255,0.5)",
+        }}
+      >
+        {t.loading}
+      </div>
+    );
 
-  const overlayResult = !game.winner ? null
-    : game.winner === (isComputer ? "X" : effectiveSym) ? "win" : "loss";
+  const overlayResult = !game.winner
+    ? null
+    : game.winner === (isComputer ? "X" : effectiveSym)
+      ? "win"
+      : "loss";
 
-  const canShoot = !game.winner && game.turn === (isComputer ? "X" : effectiveSym);
-  const statusClass = game.winner ? "status-win" : canShoot ? "status-turn" : "status-wait";
+  const canShoot =
+    !game.winner && game.turn === (isComputer ? "X" : effectiveSym);
+  const statusClass = game.winner
+    ? "status-win"
+    : canShoot
+      ? "status-turn"
+      : "status-wait";
   const statusText = game.winner
-    ? (game.winner === (isComputer ? "X" : effectiveSym) ? `🏆 ${t.youWin}` : `🏆 ${game.winner === "X" ? nameX : nameO} ${t.wins}`)
-    : canShoot ? `🎯 ${t.fireNow}`
-    : `⏳ ${game.turn === "X" ? nameX : nameO} ${t.enemyShooting}`;
+    ? game.winner === (isComputer ? "X" : effectiveSym)
+      ? `🏆 ${t.youWin}`
+      : `🏆 ${game.winner === "X" ? nameX : nameO} ${t.wins}`
+    : canShoot
+      ? `🎯 ${t.fireNow}`
+      : `⏳ ${game.turn === "X" ? nameX : nameO} ${t.enemyShooting}`;
 
   return (
-    <div className="fade-in" style={{ textAlign: "center", padding: "0.5rem 0.5rem 1rem" }}>
+    <div
+      className="fade-in"
+      style={{ textAlign: "center", padding: "0.5rem 0.5rem 1rem" }}
+    >
       {topBar}
       <h1 className="game-title">🚢 {t.battleship}</h1>
       <div className={`status-badge ${statusClass}`}>{statusText}</div>
@@ -577,9 +780,26 @@ function Battleship() {
         <span className="player-o">🔴 {nameO}</span>
       </div>
 
-      <div className="bs-grids-row" style={{ display: "flex", justifyContent: "center", gap: "1.5rem", flexWrap: "wrap", marginTop: "0.75rem" }}>
+      <div
+        className="bs-grids-row"
+        style={{
+          display: "flex",
+          justifyContent: "center",
+          gap: "1.5rem",
+          flexWrap: "wrap",
+          marginTop: "0.75rem",
+        }}
+      >
         <div>
-          <p style={{ fontSize: "0.85rem", color: "rgba(255,255,255,0.45)", marginBottom: "0.3rem" }}>{t.yourFleet}</p>
+          <p
+            style={{
+              fontSize: "0.85rem",
+              color: "rgba(255,255,255,0.45)",
+              marginBottom: "0.3rem",
+            }}
+          >
+            {t.yourFleet}
+          </p>
           <div className="bs-grid">
             {Array.from({ length: GRID * GRID }, (_, i) => {
               const isShip = myShipCells.has(i);
@@ -594,7 +814,15 @@ function Battleship() {
           </div>
         </div>
         <div>
-          <p style={{ fontSize: "0.85rem", color: "rgba(255,255,255,0.45)", marginBottom: "0.3rem" }}>{t.enemyField}</p>
+          <p
+            style={{
+              fontSize: "0.85rem",
+              color: "rgba(255,255,255,0.45)",
+              marginBottom: "0.3rem",
+            }}
+          >
+            {t.enemyField}
+          </p>
           <div className="bs-grid">
             {Array.from({ length: GRID * GRID }, (_, i) => {
               const isHit = shotHits.has(i);
@@ -604,9 +832,14 @@ function Battleship() {
               if (isHit) cls = "bs-cell-hit";
               if (isMiss) cls = "bs-cell-miss";
               return (
-                <div key={i} className={`bs-cell ${cls}`}
+                <div
+                  key={i}
+                  className={`bs-cell ${cls}`}
                   style={{ cursor: canFire ? "crosshair" : "default" }}
-                  onClick={() => canFire && (isComputer ? handleComputerShot(i) : handleOnlineShot(i))}
+                  onClick={() =>
+                    canFire &&
+                    (isComputer ? handleComputerShot(i) : handleOnlineShot(i))
+                  }
                 />
               );
             })}
@@ -614,7 +847,13 @@ function Battleship() {
         </div>
       </div>
 
-      <div style={{ fontSize: "0.78rem", color: "rgba(255,255,255,0.35)", marginTop: "0.5rem" }}>
+      <div
+        style={{
+          fontSize: "0.78rem",
+          color: "rgba(255,255,255,0.35)",
+          marginTop: "0.5rem",
+        }}
+      >
         🔴 {t.hit} &nbsp; 🔵 {t.miss} &nbsp; ⬛ {t.myShip}
       </div>
 
@@ -624,14 +863,29 @@ function Battleship() {
           winnerName={game.winner === "X" ? nameX : nameO}
           onClose={() => setShowOverlay(false)}
         >
-          <button className="btn-primary" onClick={() => { setShowOverlay(false); handleStart(); }}>{t.newGame}</button>
-          <button className="btn-secondary" onClick={() => setShowOverlay(false)}>✕</button>
+          <button
+            className="btn-primary"
+            onClick={() => {
+              setShowOverlay(false);
+              handleStart();
+            }}
+          >
+            {t.newGame}
+          </button>
+          <button
+            className="btn-secondary"
+            onClick={() => setShowOverlay(false)}
+          >
+            ✕
+          </button>
         </GameResultOverlay>
       )}
 
       <TurnBanner show={showTurnBanner} text={turnBannerTextRef.current} />
 
-      {showRules && <RulesModal gameKey="battleship" onClose={() => setShowRules(false)} />}
+      {showRules && (
+        <RulesModal gameKey="battleship" onClose={() => setShowRules(false)} />
+      )}
     </div>
   );
 }
