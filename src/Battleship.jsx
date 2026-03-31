@@ -148,53 +148,81 @@ function normalizeShips(raw) {
   );
 }
 
-// ── Placement Grid (Drag directly on grid) ────────────────────────────────
+// ── Placement Grid ─────────────────────────────────────────────────────────
 
-function PlacementGrid({ placedShips, shipDefs, onPlace, onReset }) {
+function PlacementGrid({ placedShips, shipDefs, onPlace, onSwap, onReset }) {
   const { t } = useLanguage();
+  const gridRef = useRef(null);
+
+  // What ship are we currently placing / repositioning?
+  const [pickedUpIdx, setPickedUpIdx] = useState(null);   // index in placedShips, or null
   const [horizontal, setHorizontal] = useState(true);
-  const [previewStart, setPreviewStart] = useState(null); // cell index where drag/hover starts
-  const [dragOrigin, setDragOrigin] = useState(null);     // pointerdown origin cell
-  const horizontalRef = useRef(true);
+  const [grabOffset, setGrabOffset] = useState(0);        // which cell within the ship was grabbed
+  const [previewAnchor, setPreviewAnchor] = useState(null); // top-left start cell for preview
 
-  const currentIdx = placedShips.length;
-  const done = currentIdx >= shipDefs.length;
+  // Refs mirror state so pointer-event closures always see latest values
+  const horizontalRef    = useRef(true);
+  const grabOffsetRef    = useRef(0);
+  const previewAnchorRef = useRef(null);
+  const isDraggingRef    = useRef(false);
+  const pickedUpIdxRef   = useRef(null);
+  const downXRef         = useRef(0);   // pointer-down screen X
+  const downYRef         = useRef(0);   // pointer-down screen Y
+  const dirLockRef       = useRef(false); // has direction been locked this drag?
+  // double-tap detection
+  const lastTapRef       = useRef(0);
+  const lastTapCellRef   = useRef(null);
+
+  const currentIdx = pickedUpIdx !== null ? pickedUpIdx : placedShips.length;
+  const done = pickedUpIdx === null && placedShips.length >= shipDefs.length;
   const current = done ? null : shipDefs[currentIdx];
-  const placedCells = new Set(placedShips.flat());
+  const allPlacedCells = new Set(placedShips.flat());
 
+  // Sync refs
   useEffect(() => { horizontalRef.current = horizontal; }, [horizontal]);
+  useEffect(() => { grabOffsetRef.current = grabOffset; }, [grabOffset]);
+  useEffect(() => { previewAnchorRef.current = previewAnchor; }, [previewAnchor]);
+  useEffect(() => { pickedUpIdxRef.current = pickedUpIdx; }, [pickedUpIdx]);
 
   // Keyboard R to rotate
   useEffect(() => {
     const handler = (e) => {
       if (e.key === "r" || e.key === "R") {
-        setHorizontal((h) => !h);
-        setPreviewStart(null);
+        const next = !horizontalRef.current;
+        setHorizontal(next); horizontalRef.current = next;
+        setPreviewAnchor(null); previewAnchorRef.current = null;
       }
     };
     window.addEventListener("keydown", handler);
     return () => window.removeEventListener("keydown", handler);
   }, []);
 
-  const getPreview = (startIdx, horiz) => {
-    if (done || startIdx === null) return { cells: [], valid: false };
-    const cells = getShipCells(startIdx, current.size, horiz);
+  // Given pointer position, compute the ship's top-left anchor cell
+  // taking the grab offset into account so the ship "sticks" to the grabbed cell
+  const anchorFromPointer = (pointerCell, horiz, offset, size) => {
+    if (pointerCell === null) return null;
+    const row = Math.floor(pointerCell / GRID);
+    const col = pointerCell % GRID;
+    if (horiz) {
+      const anchorCol = Math.max(0, Math.min(col - offset, GRID - size));
+      return row * GRID + anchorCol;
+    } else {
+      const anchorRow = Math.max(0, Math.min(row - offset, GRID - size));
+      return anchorRow * GRID + col;
+    }
+  };
+
+  const getPreview = (anchor, horiz) => {
+    if (!current || anchor === null) return { cells: [], valid: false };
+    const cells = getShipCells(anchor, current.size, horiz);
     if (!cells) return { cells: [], valid: false };
-    return { cells, valid: !hasOverlap(cells, placedShips) };
+    const others = placedShips.filter((_, i) => i !== pickedUpIdx);
+    return { cells, valid: !hasOverlap(cells, others) };
   };
 
-  const { cells: previewCells, valid: previewValid } = getPreview(previewStart, horizontal);
+  const { cells: previewCells, valid: previewValid } = getPreview(previewAnchor, horizontal);
 
-  const tryPlace = (cellIdx) => {
-    if (done || cellIdx === null) return;
-    const cells = getShipCells(cellIdx, current.size, horizontalRef.current);
-    if (!cells || hasOverlap(cells, placedShips)) return;
-    onPlace(cells);
-    setPreviewStart(null);
-    setDragOrigin(null);
-  };
-
-  // Helper: get cell index from a pointer/touch point
+  // Returns cell index under a screen point (works for mouse + touch)
   const getCellAt = (x, y) => {
     const el = document.elementFromPoint(x, y);
     if (!el) return null;
@@ -204,77 +232,150 @@ function PlacementGrid({ placedShips, shipDefs, onPlace, onReset }) {
     return isNaN(n) ? null : n;
   };
 
-  // Pointer events on the grid: drag across cells to preview, release to place
+  const commitPlacement = () => {
+    const anchor = previewAnchorRef.current;
+    const horiz  = horizontalRef.current;
+    const pIdx   = pickedUpIdxRef.current;
+    if (!current || anchor === null) return;
+    const cells = getShipCells(anchor, current.size, horiz);
+    if (!cells) return;
+    const others = placedShips.filter((_, i) => i !== pIdx);
+    if (hasOverlap(cells, others)) return;
+    if (pIdx !== null) {
+      onSwap(pIdx, cells);
+      setPickedUpIdx(null); pickedUpIdxRef.current = null;
+    } else {
+      onPlace(cells);
+    }
+    setPreviewAnchor(null); previewAnchorRef.current = null;
+    isDraggingRef.current = false;
+  };
+
+  const updatePreviewFromPoint = (x, y) => {
+    const pointerCell = getCellAt(x, y);
+    if (pointerCell === null) return;
+    const size = current?.size;
+    if (!size) return;
+    const anchor = anchorFromPointer(pointerCell, horizontalRef.current, grabOffsetRef.current, size);
+    setPreviewAnchor(anchor);
+    previewAnchorRef.current = anchor;
+  };
+
+  // ── Pointer events ─────────────────────────────────────────────────────────
+
   const handlePointerDown = (e, cellIdx) => {
+    e.preventDefault();
+    gridRef.current?.setPointerCapture(e.pointerId);
+    isDraggingRef.current = true;
+    downXRef.current = e.clientX;
+    downYRef.current = e.clientY;
+    dirLockRef.current = false;
+
+    // Double-tap on same cell → rotate
+    const now = Date.now();
+    if (now - lastTapRef.current < 350 && lastTapCellRef.current === cellIdx) {
+      const next = !horizontalRef.current;
+      setHorizontal(next); horizontalRef.current = next;
+      setPreviewAnchor(null); previewAnchorRef.current = null;
+      isDraggingRef.current = false;
+      lastTapRef.current = 0; lastTapCellRef.current = null;
+      return;
+    }
+    lastTapRef.current = now;
+    lastTapCellRef.current = cellIdx;
+
+    if (allPlacedCells.has(cellIdx)) {
+      const shipIdx = placedShips.findIndex((cells) => cells.includes(cellIdx));
+      if (shipIdx !== -1) {
+        const shipCells = placedShips[shipIdx];
+        const offset = shipCells.indexOf(cellIdx);
+        const existingHoriz = shipCells.length < 2 || (shipCells[1] - shipCells[0] === 1);
+        setHorizontal(existingHoriz); horizontalRef.current = existingHoriz;
+        setGrabOffset(offset);        grabOffsetRef.current = offset;
+        setPickedUpIdx(shipIdx);      pickedUpIdxRef.current = shipIdx;
+        dirLockRef.current = true; // keep ship's existing orientation until moved
+        const anchor = anchorFromPointer(cellIdx, existingHoriz, offset, shipDefs[shipIdx].size);
+        setPreviewAnchor(anchor); previewAnchorRef.current = anchor;
+        return;
+      }
+    }
     if (done) return;
-    e.currentTarget.setPointerCapture(e.pointerId);
-    setDragOrigin(cellIdx);
-    setPreviewStart(cellIdx);
+    setGrabOffset(0); grabOffsetRef.current = 0;
+    const size = current?.size ?? 1;
+    const anchor = anchorFromPointer(cellIdx, horizontalRef.current, 0, size);
+    setPreviewAnchor(anchor); previewAnchorRef.current = anchor;
   };
 
   const handlePointerMove = (e) => {
-    if (done || dragOrigin === null) {
-      // hover without drag: just update preview on the cell under pointer
-      const idx = getCellAt(e.clientX, e.clientY);
-      if (idx !== null) setPreviewStart(idx);
-      return;
-    }
-    // During drag: determine orientation from movement direction
-    const idx = getCellAt(e.clientX, e.clientY);
-    if (idx === null) return;
-    const dragRow = Math.floor(dragOrigin / GRID);
-    const dragCol = dragOrigin % GRID;
-    const curRow = Math.floor(idx / GRID);
-    const curCol = idx % GRID;
-    const dRow = Math.abs(curRow - dragRow);
-    const dCol = Math.abs(curCol - dragCol);
-    if (dRow > 0 || dCol > 0) {
-      const newHoriz = dCol >= dRow;
-      if (newHoriz !== horizontalRef.current) {
-        setHorizontal(newHoriz);
-        horizontalRef.current = newHoriz;
+    if (!isDraggingRef.current && done) return;
+
+    // Auto-detect orientation from drag direction (after 1+ cell of movement)
+    if (isDraggingRef.current && !dirLockRef.current) {
+      const dx = Math.abs(e.clientX - downXRef.current);
+      const dy = Math.abs(e.clientY - downYRef.current);
+      const threshold = 12; // px before we lock direction
+      if (dx > threshold || dy > threshold) {
+        const newHoriz = dx >= dy;
+        if (newHoriz !== horizontalRef.current) {
+          setHorizontal(newHoriz); horizontalRef.current = newHoriz;
+          // reset grab offset when orientation changes mid-drag
+          setGrabOffset(0); grabOffsetRef.current = 0;
+        }
+        dirLockRef.current = true;
       }
     }
-    // Anchor preview at drag origin
-    setPreviewStart(dragOrigin);
+
+    updatePreviewFromPoint(e.clientX, e.clientY);
   };
 
-  const handlePointerUp = () => {
-    if (done) return;
-    if (dragOrigin !== null) {
-      tryPlace(dragOrigin);
+  const handlePointerUp = (e) => {
+    if (isDraggingRef.current) {
+      updatePreviewFromPoint(e.clientX, e.clientY);
+      commitPlacement();
     }
-    setDragOrigin(null);
+    isDraggingRef.current = false;
   };
 
   const handlePointerLeave = () => {
-    if (dragOrigin === null) setPreviewStart(null);
+    if (!isDraggingRef.current) {
+      setPreviewAnchor(null); previewAnchorRef.current = null;
+    }
+  };
+
+  const handleReset = () => {
+    onReset();
+    setPickedUpIdx(null); pickedUpIdxRef.current = null;
+    setPreviewAnchor(null); previewAnchorRef.current = null;
+    isDraggingRef.current = false;
   };
 
   return (
     <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: "0.75rem" }}>
 
-      {/* Grid — drag directly on it */}
+      {/* Grid */}
       <div
+        ref={gridRef}
         className="bs-grid"
         style={{ touchAction: "none", cursor: done ? "default" : "crosshair" }}
+        onPointerDown={(e) => {
+          const idx = getCellAt(e.clientX, e.clientY);
+          if (idx !== null) handlePointerDown(e, idx);
+        }}
         onPointerMove={handlePointerMove}
         onPointerUp={handlePointerUp}
         onPointerLeave={handlePointerLeave}
       >
         {Array.from({ length: GRID * GRID }, (_, i) => {
-          const isPlaced = placedCells.has(i);
+          const shipIdx = placedShips.findIndex((cells) => cells.includes(i));
+          const isPickedUp = shipIdx === pickedUpIdx && pickedUpIdx !== null;
+          const isPlaced = allPlacedCells.has(i) && !isPickedUp;
           const isPreview = previewCells.includes(i);
           let cls = "bs-cell-empty";
-          if (isPlaced) cls = "bs-cell-placed";
+          if (isPickedUp) cls = "bs-cell-pickedup";
+          else if (isPlaced) cls = "bs-cell-placed";
           if (isPreview) cls = previewValid ? "bs-cell-hover-valid" : "bs-cell-hover-invalid";
           return (
-            <div
-              key={i}
-              data-cell-idx={i}
-              className={`bs-cell ${cls}`}
-              onPointerDown={(e) => handlePointerDown(e, i)}
-            />
+            <div key={i} data-cell-idx={i} className={`bs-cell ${cls}`} />
           );
         })}
       </div>
@@ -282,14 +383,18 @@ function PlacementGrid({ placedShips, shipDefs, onPlace, onReset }) {
       {/* Controls below the grid */}
       {!done ? (
         <div style={{ textAlign: "center" }}>
-          <p style={{ color: "#a78bfa", fontWeight: 700, marginBottom: "0.5rem" }}>
-            {t.placingShip} <span style={{ color: "white" }}>{current.name}</span> ({current.size} {t.fields})
+          <p style={{ color: pickedUpIdx !== null ? "#fbbf24" : "#a78bfa", fontWeight: 700, marginBottom: "0.5rem" }}>
+            {pickedUpIdx !== null ? "✋ " : ""}{t.placingShip} <span style={{ color: "white" }}>{current?.name}</span> ({current?.size} {t.fields})
           </p>
-          <button className="rotate-btn" onClick={() => { setHorizontal((h) => !h); setPreviewStart(null); }}>
+          <button className="rotate-btn" onClick={() => {
+            const next = !horizontalRef.current;
+            setHorizontal(next); horizontalRef.current = next;
+            setPreviewAnchor(null); previewAnchorRef.current = null;
+          }}>
             🔄 {horizontal ? t.horizontal : t.vertical} — {t.rotate}
           </button>
           <p style={{ fontSize: "0.78rem", color: "rgba(255,255,255,0.35)", marginTop: "0.4rem" }}>
-            {t.dragToPlace}
+            {pickedUpIdx !== null ? t.dragToReplace : t.dragToPlace}
           </p>
         </div>
       ) : (
@@ -298,14 +403,19 @@ function PlacementGrid({ placedShips, shipDefs, onPlace, onReset }) {
 
       {/* Ship checklist */}
       <div className="ship-list">
-        {shipDefs.map((s, idx) => (
-          <span key={idx} className={`ship-tag ${idx < currentIdx ? "ship-done" : idx === currentIdx ? "ship-active" : "ship-pending"}`}>
-            {idx < currentIdx ? "✓" : ""} {s.name} ({s.size})
-          </span>
-        ))}
+        {shipDefs.map((s, idx) => {
+          const isPlacedShip = idx < placedShips.length;
+          const isActive = idx === currentIdx;
+          const isPickedUpShip = idx === pickedUpIdx;
+          return (
+            <span key={idx} className={`ship-tag ${isPickedUpShip ? "ship-pickedup" : isPlacedShip ? "ship-done" : isActive ? "ship-active" : "ship-pending"}`}>
+              {isPickedUpShip ? "✋" : isPlacedShip ? "✓" : ""} {s.name} ({s.size})
+            </span>
+          );
+        })}
       </div>
 
-      <button className="btn-secondary" onClick={() => { onReset(); setPreviewStart(null); setDragOrigin(null); }} style={{ fontSize: "0.85rem" }}>
+      <button className="btn-secondary" onClick={handleReset} style={{ fontSize: "0.85rem" }}>
         🔄 {t.resetPlacement}
       </button>
     </div>
@@ -649,6 +759,7 @@ function Battleship() {
           placedShips={placedShips}
           shipDefs={SHIPS}
           onPlace={(cells) => setPlacedShips((prev) => [...prev, cells])}
+          onSwap={(idx, cells) => setPlacedShips((prev) => prev.map((s, i) => i === idx ? cells : s))}
           onReset={() => setPlacedShips([])}
         />
         {placedShips.length === SHIPS.length && (

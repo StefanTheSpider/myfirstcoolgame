@@ -480,6 +480,7 @@ button:disabled { opacity: 0.35; cursor: default; transform: none; }
 .bs-cell-hover-valid { background: rgba(16,185,129,0.5) !important; }
 .bs-cell-hover-invalid { background: rgba(239,68,68,0.5) !important; }
 .bs-cell-placed { background: linear-gradient(135deg, #475569, #334155) !important; }
+.bs-cell-pickedup { background: rgba(251,191,36,0.25) !important; border-color: rgba(251,191,36,0.5) !important; }
 
 .bs-label { font-size: 0.85rem; color: rgba(255,255,255,0.45); margin-top: 0.3rem; }
 
@@ -500,6 +501,7 @@ button:disabled { opacity: 0.35; cursor: default; transform: none; }
 .ship-done { background: rgba(16,185,129,0.15); color: #6ee7b7; border-color: rgba(16,185,129,0.3); text-decoration: line-through; }
 .ship-active { background: rgba(124,58,237,0.25); color: #a78bfa; border-color: rgba(124,58,237,0.4); font-weight: 700; }
 .ship-pending { background: rgba(255,255,255,0.04); color: rgba(255,255,255,0.3); }
+.ship-pickedup { background: rgba(251,191,36,0.2); color: #fbbf24; border-color: rgba(251,191,36,0.5); font-weight: 700; }
 
 /* Rotate button */
 .rotate-btn {
