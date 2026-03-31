@@ -6,6 +6,7 @@ import { v4 as uuidv4 } from "uuid";
 import { useLanguage } from "./LanguageContext";
 import RulesModal from "./RulesModal";
 import { GameResultOverlay } from "./GameOverlay";
+import GameSuggestion from "./GameSuggestion";
 
 const emptyBoard = Array(9).fill(null);
 
@@ -396,6 +397,10 @@ function OnlineGame() {
       )}
 
       {showRules && <RulesModal gameKey="tictactoe" onClose={() => setShowRules(false)} />}
+
+      {!isComputer && gameIdFromUrl && game.player_o && (
+        <GameSuggestion gameType="tictactoe" gameId={gameIdFromUrl} playerId={playerId} currentGame="/tictactoe" />
+      )}
 
       {!game.winner && (
         <button className="btn-secondary" onClick={() => navigate("/")} style={{ marginTop: "1.5rem" }}>

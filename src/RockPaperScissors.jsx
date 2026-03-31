@@ -6,6 +6,7 @@ import { v4 as uuidv4 } from "uuid";
 import { useLanguage } from "./LanguageContext";
 import RulesModal from "./RulesModal";
 import { GameResultOverlay } from "./GameOverlay";
+import GameSuggestion from "./GameSuggestion";
 
 const CHOICES = ["Stein", "Schere", "Papier"];
 const ICONS = { Stein: "🪨", Schere: "✂️", Papier: "📄" };
@@ -49,7 +50,8 @@ function RockPaperScissors() {
 
   const [game, setGame] = useState(null);
   const [playerSymbol, setPlayerSymbol] = useState(null);
-  const [playerName] = useState(() => localStorage.getItem("playerName") || "");
+  const [playerName, setPlayerName] = useState(() => localStorage.getItem("playerName") || "");
+  const [nameInput, setNameInput] = useState("");
   const [showRules, setShowRules] = useState(false);
   const [copied, setCopied] = useState(false);
   const [pendingChoice, setPendingChoice] = useState(null); // chosen but countdown running
@@ -255,6 +257,26 @@ function RockPaperScissors() {
 
   if (!game) return <div style={{ textAlign: "center", marginTop: "4rem", color: "rgba(255,255,255,0.5)" }}>{t.loading}</div>;
 
+  if (!playerName && effectiveSym !== "Spectator" && !isComputer) {
+    const handleNameSubmit = () => {
+      const trimmed = nameInput.trim();
+      if (trimmed) { localStorage.setItem("playerName", trimmed); setPlayerName(trimmed); }
+    };
+    return (
+      <div className="fade-in" style={{ textAlign: "center", marginTop: "4rem", padding: "0 1rem" }}>
+        <h2 style={{ color: "rgba(255,255,255,0.7)", marginBottom: "1rem" }}>{t.enterNameFirst}</h2>
+        <input type="text" value={nameInput}
+          onChange={(e) => setNameInput(e.target.value)}
+          onKeyDown={(e) => e.key === "Enter" && handleNameSubmit()}
+          className="name-input" />
+        <br />
+        <button className="btn-primary" onClick={handleNameSubmit} style={{ marginTop: "1rem" }}>
+          {t.confirmName}
+        </button>
+      </div>
+    );
+  }
+
   // What the player wins/loses
   const overlayResult = !game.result ? null
     : game.result === "Draw" ? "draw"
@@ -362,6 +384,10 @@ function RockPaperScissors() {
           </button>
           <button className="btn-secondary" onClick={() => setShowOverlay(false)}>✕</button>
         </GameResultOverlay>
+      )}
+
+      {!isComputer && gameIdFromUrl && game.player_o && (
+        <GameSuggestion gameType="rps" gameId={gameIdFromUrl} playerId={playerId} currentGame="/rps" />
       )}
 
       {showRules && <RulesModal gameKey="rps" onClose={() => setShowRules(false)} />}

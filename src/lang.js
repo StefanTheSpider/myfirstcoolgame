@@ -72,6 +72,14 @@ const lang = {
     nowShooting: "schießt jetzt",
     yourShotNow: "Du bist dran!",
     turnBanner: "Spielerwechsel",
+    suggestGame: "Anderes Spiel vorschlagen",
+    gameSuggestion: "Spielvorschlag",
+    opponentSuggests: "Dein Gegner möchte spielen:",
+    accept: "Annehmen",
+    decline: "Ablehnen",
+    waitingSuggestion: "Vorschlag gesendet – warte auf Antwort...",
+    cancelSuggestion: "Abbrechen",
+    pickGameToSuggest: "Welches Spiel möchtest du vorschlagen?",
 
     // ── Sarcastic win phrases ──
     sarcasticWin: [
@@ -291,6 +299,14 @@ const lang = {
     nowShooting: "is shooting now",
     yourShotNow: "Your turn!",
     turnBanner: "Turn Change",
+    suggestGame: "Suggest another game",
+    gameSuggestion: "Game Suggestion",
+    opponentSuggests: "Your opponent wants to play:",
+    accept: "Accept",
+    decline: "Decline",
+    waitingSuggestion: "Suggestion sent – waiting for response...",
+    cancelSuggestion: "Cancel",
+    pickGameToSuggest: "Which game do you want to suggest?",
 
     sarcasticWin: [
       "Not bad for someone who probably just got lucky. 😏",
