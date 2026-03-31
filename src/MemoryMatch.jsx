@@ -7,8 +7,13 @@ import { useLanguage } from "./LanguageContext";
 import RulesModal from "./RulesModal";
 import { GameResultOverlay } from "./GameOverlay";
 
-const EMOJIS = ["🐶","🐱","🐭","🐹","🐰","🦊","🐻","🐼"];
-const CARD_COUNT = 16;
+const EMOJIS = [
+  "🐶","🐱","🐭","🐹","🐰","🦊","🐻","🐼",
+  "🦁","🐸","🐵","🐧","🐦","🐤","🦋","🐌",
+  "🐙","🦀","🐟","🐬","🦄","🐝","🐞","🐢",
+  "🍎","🍕","🎸","🚀","⚽","🎲","💎","🌈",
+];
+const CARD_COUNT = 64;
 
 function shuffleCards() {
   const deck = [...EMOJIS, ...EMOJIS];
@@ -86,7 +91,11 @@ function MemoryMatch() {
 
     // AI picks first card
     const timer = setTimeout(() => {
-      // Try to find a known pair
+      // AI forgets cards randomly (~60% chance to forget each card)
+      for (const idx of Object.keys(aiMemory.current)) {
+        if (Math.random() < 0.6) delete aiMemory.current[idx];
+      }
+
       let first = -1, second = -1;
       const knownEmojis = {};
       for (const [idx, emoji] of Object.entries(aiMemory.current)) {
@@ -94,8 +103,11 @@ function MemoryMatch() {
         if (!knownEmojis[emoji]) knownEmojis[emoji] = [];
         knownEmojis[emoji].push(Number(idx));
       }
-      for (const [, indices] of Object.entries(knownEmojis)) {
-        if (indices.length >= 2) { first = indices[0]; second = indices[1]; break; }
+      // Only use known pair 50% of the time
+      if (Math.random() < 0.5) {
+        for (const [, indices] of Object.entries(knownEmojis)) {
+          if (indices.length >= 2) { first = indices[0]; second = indices[1]; break; }
+        }
       }
       if (first === -1) {
         // Pick random unmatched card
@@ -104,12 +116,15 @@ function MemoryMatch() {
           ? unknown[Math.floor(Math.random() * unknown.length)]
           : unmatched[Math.floor(Math.random() * unmatched.length)];
         aiMemory.current[first] = cards[first];
-        // Try to find matching card in memory
-        const matchIdx = Object.entries(aiMemory.current)
-          .filter(([idx, em]) => em === cards[first] && Number(idx) !== first && !matched.includes(Number(idx)));
-        if (matchIdx.length > 0) {
-          second = Number(matchIdx[0][0]);
-        } else {
+        // Try to find matching card in memory (only 40% chance)
+        if (Math.random() < 0.4) {
+          const matchIdx = Object.entries(aiMemory.current)
+            .filter(([idx, em]) => em === cards[first] && Number(idx) !== first && !matched.includes(Number(idx)));
+          if (matchIdx.length > 0) {
+            second = Number(matchIdx[0][0]);
+          }
+        }
+        if (second === -1) {
           const unknown2 = unmatched.filter(i => i !== first && !(i in aiMemory.current));
           second = unknown2.length > 0
             ? unknown2[Math.floor(Math.random() * unknown2.length)]
@@ -146,13 +161,13 @@ function MemoryMatch() {
           // Not a match: flip back after delay
           setTimeout(() => {
             setGame(prev => ({ ...prev, flipped: [], turn: "X" }));
-          }, 1000);
+          }, 1500);
         }
-      }, 600);
-    }, 600);
+      }, 1000);
+    }, 1000);
     return () => clearTimeout(timer);
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isComputer, game?.turn, game?.winner, isFlipping]);
+  }, [isComputer, game?.turn, game?.winner, isFlipping, game?.matched?.length]);
 
   useEffect(() => {
     if (!gameIdFromUrl || isComputer) return;
@@ -259,7 +274,7 @@ function MemoryMatch() {
         setTimeout(() => {
           setGame(prev => ({ ...prev, flipped: [], turn: "O" }));
           setIsFlipping(false);
-        }, 1000);
+        }, 1500);
       }
     } else {
       if (game.turn !== playerSymbol || playerSymbol === "Spectator") return;

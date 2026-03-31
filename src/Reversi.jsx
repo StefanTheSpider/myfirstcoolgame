@@ -70,43 +70,11 @@ function countPieces(board, sym) {
 function computerMoveReversi(board) {
   const moves = getValidMoves(board, "O");
   if (moves.length === 0) return null;
-  // Minimax depth 4 with alpha-beta
-  function score(b, sym) {
-    return b.reduce((s, c, i) => c === sym ? s + WEIGHTS[i] : s, 0);
-  }
-  function minimax(b, depth, alpha, beta, maximizing) {
-    const sym = maximizing ? "O" : "X";
-    const valid = getValidMoves(b, sym);
-    if (depth === 0 || valid.length === 0) {
-      return score(b, "O") - score(b, "X");
-    }
-    if (maximizing) {
-      let best = -Infinity;
-      for (const m of valid) {
-        const nb = flipPieces(b, m, sym);
-        if (!nb) continue;
-        best = Math.max(best, minimax(nb, depth - 1, alpha, beta, false));
-        alpha = Math.max(alpha, best);
-        if (alpha >= beta) break;
-      }
-      return best;
-    } else {
-      let best = Infinity;
-      for (const m of valid) {
-        const nb = flipPieces(b, m, sym);
-        if (!nb) continue;
-        best = Math.min(best, minimax(nb, depth - 1, alpha, beta, true));
-        beta = Math.min(beta, best);
-        if (alpha >= beta) break;
-      }
-      return best;
-    }
-  }
+  // Score each move by position weight + number of flips
   let bestMove = moves[0], bestScore = -Infinity;
   for (const m of moves) {
-    const nb = flipPieces(board, m, "O");
-    if (!nb) continue;
-    const s = minimax(nb, 3, -Infinity, Infinity, false);
+    const flips = getFlips(board, m, "O");
+    const s = WEIGHTS[m] + flips.length * 3;
     if (s > bestScore) { bestScore = s; bestMove = m; }
   }
   return bestMove;
@@ -191,7 +159,6 @@ function Reversi() {
     const timer = setTimeout(() => {
       const move = computerMoveReversi(board);
       if (move === null) {
-        // O has no moves, skip to X
         const winner = checkGameEnd(board);
         setGame(prev => ({ ...prev, turn: "X", winner: winner || null, skipped: "O" }));
         setAiThinking(false);

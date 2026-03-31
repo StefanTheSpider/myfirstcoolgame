@@ -6,12 +6,7 @@ import OnlineGame from "./OnlineGame";
 import RockPaperScissors from "./RockPaperScissors";
 import ConnectFour from "./ConnectFour";
 import Battleship from "./Battleship";
-import Reversi from "./Reversi";
-import Gomoku from "./Gomoku";
-import DotsAndBoxes from "./DotsAndBoxes";
 import MemoryMatch from "./MemoryMatch";
-import Nim from "./Nim";
-import Mastermind from "./Mastermind";
 
 class ErrorBoundary extends Component {
   constructor(props) { super(props); this.state = { error: null }; }
@@ -67,12 +62,7 @@ function App() {
             <Route path="/rps" element={<RockPaperScissors />} />
             <Route path="/connect4" element={<ConnectFour />} />
             <Route path="/battleship" element={<Battleship />} />
-            <Route path="/reversi" element={<Reversi />} />
-            <Route path="/gomoku" element={<Gomoku />} />
-            <Route path="/dotsboxes" element={<DotsAndBoxes />} />
             <Route path="/memory" element={<MemoryMatch />} />
-            <Route path="/nim" element={<Nim />} />
-            <Route path="/mastermind" element={<Mastermind />} />
           </Routes>
           <div className="powered-by">
             <p>{t.poweredBy}</p>

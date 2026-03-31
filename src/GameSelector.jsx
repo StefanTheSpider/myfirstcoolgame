@@ -7,12 +7,7 @@ const GAMES = [
   { key: "connectFour", icon: "🔴", path: "/connect4", descKey: "connectFourDesc" },
   { key: "rps", icon: "✌️", path: "/rps", descKey: "rpsDesc" },
   { key: "battleship", icon: "🚢", path: "/battleship", descKey: "battleshipDesc" },
-  { key: "reversi", icon: "♟️", path: "/reversi", descKey: "reversiDesc" },
-  { key: "gomoku", icon: "🎯", path: "/gomoku", descKey: "gomokuDesc" },
-  { key: "dotsBoxes", icon: "📦", path: "/dotsboxes", descKey: "dotsBoxesDesc" },
   { key: "memoryMatch", icon: "🃏", path: "/memory", descKey: "memoryMatchDesc" },
-  { key: "nim", icon: "🪵", path: "/nim", descKey: "nimDesc" },
-  { key: "mastermind", icon: "🔐", path: "/mastermind", descKey: "mastermindDesc" },
 ];
 
 function GameSelector() {
